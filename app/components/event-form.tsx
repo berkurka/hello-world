@@ -31,14 +31,6 @@ function isTime(value: string) {
   return /^\d{2}:\d{2}/.test(value);
 }
 
-function firstNonEmpty(formData: FormData, key: string) {
-  for (const value of formData.getAll(key)) {
-    const text = String(value).trim();
-    if (text) return text;
-  }
-  return "";
-}
-
 type Props = {
   event?: EventRow;
   action: (formData: FormData) => void | Promise<void>;
@@ -48,58 +40,32 @@ type Props = {
 
 export function EventForm({ event, action, submitLabel, children }: Props) {
   const initial = splitStarts(event);
-  const [title, setTitle] = useState(event?.title ?? "");
-  const [location, setLocation] = useState(event?.location ?? "");
-  const [hostName, setHostName] = useState(event?.host_name ?? "");
   const [startsDate, setStartsDate] = useState(initial.date);
   const [startsTime, setStartsTime] = useState(initial.time);
   const [error, setError] = useState("");
-  const valuesRef = useRef({ title, location, hostName, startsDate, startsTime });
-  valuesRef.current = { title, location, hostName, startsDate, startsTime };
+  const whenRef = useRef({ startsDate, startsTime });
+  whenRef.current = { startsDate, startsTime };
 
   async function submit(formData: FormData) {
-    const latest = valuesRef.current;
-    const nextTitle = latest.title.trim() || firstNonEmpty(formData, "title");
-    const nextLocation = latest.location.trim() || firstNonEmpty(formData, "location");
-    const nextHost = latest.hostName.trim() || firstNonEmpty(formData, "hostName");
-    const nextDate = isDate(latest.startsDate)
-      ? latest.startsDate
-      : firstNonEmpty(formData, "startsDate");
-    const nextTime = isTime(latest.startsTime)
-      ? latest.startsTime.slice(0, 5)
-      : firstNonEmpty(formData, "startsTime").slice(0, 5);
-
-    if (!nextTitle || !nextHost || !isDate(nextDate) || !isTime(nextTime)) {
-      setError("Title, date (YYYY-MM-DD), time (HH:MM), and host name are required.");
+    const when = whenRef.current;
+    if (!isDate(when.startsDate) || !isTime(when.startsTime)) {
+      setError("Enter a date (YYYY-MM-DD) and time (HH:MM).");
       return;
     }
-
-    formData.set("title", nextTitle);
-    formData.set("location", nextLocation);
-    formData.set("hostName", nextHost);
-    formData.set("startsDate", nextDate);
-    formData.set("startsTime", nextTime);
+    formData.set("startsDate", when.startsDate);
+    formData.set("startsTime", when.startsTime);
     await action(formData);
   }
 
   return (
     <form action={submit} noValidate className="stack" style={{ marginTop: "1rem" }}>
       {children}
-      <input type="hidden" name="title" value={title} />
-      <input type="hidden" name="location" value={location} />
-      <input type="hidden" name="hostName" value={hostName} />
       <input type="hidden" name="startsDate" value={startsDate} />
       <input type="hidden" name="startsTime" value={startsTime} />
       {error ? <p className="flash error">{error}</p> : null}
       <label className="field">
         <span>Event title</span>
-        <input
-          name="title"
-          required
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Saturday dinner"
-        />
+        <input name="title" required defaultValue={event?.title ?? ""} placeholder="Saturday dinner" />
       </label>
       <div className="counts">
         <label className="field">
@@ -125,6 +91,7 @@ export function EventForm({ event, action, submitLabel, children }: Props) {
             name="startsTime"
             type="time"
             required
+            lang="en-CA"
             autoComplete="off"
             value={startsTime}
             onChange={(e) => {
@@ -141,20 +108,13 @@ export function EventForm({ event, action, submitLabel, children }: Props) {
         <textarea
           name="location"
           rows={3}
-          value={location}
-          onChange={(e) => setLocation(e.target.value)}
+          defaultValue={event?.location ?? ""}
           placeholder="123 Main St, or parking notes, dress code…"
         />
       </label>
       <label className="field">
         <span>Host name</span>
-        <input
-          name="hostName"
-          required
-          value={hostName}
-          onChange={(e) => setHostName(e.target.value)}
-          placeholder="Alex"
-        />
+        <input name="hostName" required defaultValue={event?.host_name ?? ""} placeholder="Alex" />
       </label>
       <fieldset className="toggles">
         <legend>RSVP fields for invitees</legend>
