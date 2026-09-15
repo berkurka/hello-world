@@ -29,7 +29,9 @@ async function requireOrganizer(formData: FormData) {
 
 function eventFields(formData: FormData) {
   const title = required(formData, "title");
-  const startsAt = required(formData, "startsAt");
+  const startsDate = required(formData, "startsDate");
+  const startsTime = required(formData, "startsTime");
+  const startsAt = startsDate && startsTime ? `${startsDate}T${startsTime}` : "";
   const location = required(formData, "location");
   const hostName = required(formData, "hostName");
   return {

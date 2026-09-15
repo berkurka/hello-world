@@ -7,16 +7,25 @@ type Props = {
 
 export function EventFields({ event }: Props) {
   const startsAt = event?.starts_at ? event.starts_at.slice(0, 16) : "";
+  const [startsDate, startsTime] = startsAt.includes("T")
+    ? startsAt.split("T")
+    : ["", ""];
   return (
     <>
       <label className="field">
         <span>Event title</span>
         <input name="title" required defaultValue={event?.title ?? ""} placeholder="Saturday dinner" />
       </label>
-      <label className="field">
-        <span>Date and time</span>
-        <input name="startsAt" type="datetime-local" required defaultValue={startsAt} />
-      </label>
+      <div className="counts">
+        <label className="field">
+          <span>Date</span>
+          <input name="startsDate" type="date" required defaultValue={startsDate} />
+        </label>
+        <label className="field">
+          <span>Time</span>
+          <input name="startsTime" type="time" required defaultValue={startsTime} />
+        </label>
+      </div>
       <label className="field">
         <span>Location or notes</span>
         <textarea
