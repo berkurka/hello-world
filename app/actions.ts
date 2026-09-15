@@ -16,7 +16,11 @@ import { newId, newToken } from "@/lib/ids";
 import { mailConfigured, sendInviteEmail } from "@/lib/mail";
 
 function required(formData: FormData, key: string) {
-  return String(formData.get(key) ?? "").trim();
+  for (const value of formData.getAll(key)) {
+    const text = String(value).trim();
+    if (text) return text;
+  }
+  return "";
 }
 
 async function requireOrganizer(formData: FormData) {
