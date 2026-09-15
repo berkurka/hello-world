@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Hello World",
+  title: "Invite",
+  description: "Create an event, send invites, collect RSVPs.",
 };
 
 export default function RootLayout({
@@ -12,7 +14,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <header className="top">
+          <Link href="/">Invite</Link>
+        </header>
+        {children}
+      </body>
     </html>
   );
 }
