@@ -1,5 +1,5 @@
 import { addInvitee, sendAllUnsent, sendInvite, updateEvent } from "@/app/actions";
-import { EventFields } from "@/app/components/event-fields";
+import { EventForm } from "@/app/components/event-form";
 import { Flash } from "@/app/components/flash";
 import { getEventForOrganizer, listInvitees } from "@/lib/db";
 import { attendingLabel, formatWhen } from "@/lib/format";
@@ -161,14 +161,10 @@ export default async function ManageEventPage({
 
         <section className="card">
           <h2>Edit event</h2>
-          <form action={updateEvent} className="stack" style={{ marginTop: "1rem" }}>
+          <EventForm action={updateEvent} event={event} submitLabel="Save changes">
             <input type="hidden" name="eventId" value={event.id} />
             <input type="hidden" name="t" value={t} />
-            <EventFields event={event} />
-            <button className="btn" type="submit">
-              Save changes
-            </button>
-          </form>
+          </EventForm>
         </section>
       </div>
     </main>

@@ -1,5 +1,5 @@
 import { createEvent } from "@/app/actions";
-import { EventFields } from "@/app/components/event-fields";
+import { EventForm } from "@/app/components/event-form";
 import { Flash } from "@/app/components/flash";
 
 export default async function Home({
@@ -20,12 +20,7 @@ export default async function Home({
       <div className="card">
         <Flash error={error} />
         <h2>New event</h2>
-        <form action={createEvent} className="stack" style={{ marginTop: "1rem" }}>
-          <EventFields />
-          <button className="btn" type="submit">
-            Create event
-          </button>
-        </form>
+        <EventForm action={createEvent} submitLabel="Create event" />
       </div>
     </main>
   );
