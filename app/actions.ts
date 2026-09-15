@@ -27,6 +27,15 @@ async function requireOrganizer(formData: FormData) {
   return event;
 }
 
+function fieldErrorPath(formData: FormData, message: string) {
+  const eventId = required(formData, "eventId");
+  const token = required(formData, "t");
+  if (eventId && token) {
+    return `/e/${eventId}/manage?t=${encodeURIComponent(token)}&error=${encodeURIComponent(message)}`;
+  }
+  return `/?error=${encodeURIComponent(message)}`;
+}
+
 function firstMatch(formData: FormData, key: string, re: RegExp) {
   for (const value of formData.getAll(key)) {
     const text = String(value).trim();
@@ -57,8 +66,17 @@ function eventFields(formData: FormData) {
 
 export async function createEvent(formData: FormData) {
   const fields = eventFields(formData);
-  if (!fields.title || !fields.startsAt || !fields.hostName) {
-    redirect("/?error=" + encodeURIComponent("Title, date/time, and host name are required."));
+  if (!fields.title) {
+    const dest = fieldErrorPath(formData, "Title is required.");
+    redirect(dest);
+  }
+  if (!fields.startsAt) {
+    const dest = fieldErrorPath(formData, "Date and time are required.");
+    redirect(dest);
+  }
+  if (!fields.hostName) {
+    const dest = fieldErrorPath(formData, "Host name is required.");
+    redirect(dest);
   }
   const id = newId();
   const adminToken = newToken();
@@ -85,11 +103,14 @@ export async function createEvent(formData: FormData) {
 export async function updateEvent(formData: FormData) {
   const event = await requireOrganizer(formData);
   const fields = eventFields(formData);
-  if (!fields.title || !fields.startsAt || !fields.hostName) {
-    redirect(
-      `/e/${event.id}/manage?t=${event.admin_token}&error=` +
-        encodeURIComponent("Title, date/time, and host name are required."),
-    );
+  if (!fields.title) {
+    redirect(fieldErrorPath(formData, "Title is required."));
+  }
+  if (!fields.startsAt) {
+    redirect(fieldErrorPath(formData, "Date and time are required."));
+  }
+  if (!fields.hostName) {
+    redirect(fieldErrorPath(formData, "Host name is required."));
   }
   await run(
     `UPDATE events SET title = ?, starts_at = ?, location = ?, host_name = ?, ask_comment = ?, ask_adults = ?, ask_kids = ?, ask_infants = ?

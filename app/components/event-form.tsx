@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
+import { useFormStatus } from "react-dom";
 import { formatWhen } from "@/lib/format";
 import type { EventRow } from "@/lib/types";
 
@@ -42,27 +43,23 @@ export function EventForm({ event, action, submitLabel, children }: Props) {
   const [startsDate, setStartsDate] = useState(initial.date);
   const [startsTime, setStartsTime] = useState(initial.time);
   const [error, setError] = useState("");
-  const [pending, startTransition] = useTransition();
+
+  async function submit(formData: FormData) {
+    if (!isDate(startsDate) || !isTime(startsTime)) {
+      setError("Enter a date (YYYY-MM-DD) and time (HH:MM).");
+      return;
+    }
+    formData.set("startsDate", startsDate);
+    formData.set("startsTime", startsTime);
+    await action(formData);
+  }
 
   return (
     <form
-      action={action}
+      action={submit}
       noValidate
       className="stack"
       style={{ marginTop: "1rem" }}
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (!isDate(startsDate) || !isTime(startsTime)) {
-          setError("Enter a date (YYYY-MM-DD) and time (HH:MM).");
-          return;
-        }
-        const fd = new FormData(e.currentTarget);
-        fd.set("startsDate", startsDate);
-        fd.set("startsTime", startsTime);
-        startTransition(() => {
-          void action(fd);
-        });
-      }}
     >
       {children}
       <input type="hidden" name="startsDate" value={startsDate} />
@@ -141,9 +138,16 @@ export function EventForm({ event, action, submitLabel, children }: Props) {
         </label>
       </fieldset>
       {event ? <p className="hint">Preview: {formatWhen(event.starts_at)}</p> : null}
-      <button className="btn" type="submit" disabled={pending}>
-        {pending ? "Saving…" : submitLabel}
-      </button>
+      <SubmitButton label={submitLabel} />
     </form>
+  );
+}
+
+function SubmitButton({ label }: { label: string }) {
+  const { pending } = useFormStatus();
+  return (
+    <button className="btn" type="submit" disabled={pending}>
+      {pending ? "Saving…" : label}
+    </button>
   );
 }
