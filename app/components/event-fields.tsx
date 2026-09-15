@@ -5,11 +5,24 @@ type Props = {
   event?: EventRow;
 };
 
+function defaultEventDate() {
+  const d = new Date();
+  d.setDate(d.getDate() + 7);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+type Props = {
+  event?: EventRow;
+};
+
 export function EventFields({ event }: Props) {
   const startsAt = event?.starts_at ? event.starts_at.slice(0, 16) : "";
   const [startsDate, startsTime] = startsAt.includes("T")
     ? startsAt.split("T")
-    : ["", ""];
+    : [defaultEventDate(), "18:00"];
   return (
     <>
       <label className="field">
