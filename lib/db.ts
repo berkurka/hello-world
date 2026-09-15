@@ -1,7 +1,10 @@
 import { mkdirSync } from "fs";
 import { join } from "path";
 import { createClient, type Client } from "@libsql/client";
+import { isEphemeralDb } from "./db-env";
 import type { EventRow, InviteeRow, InviteeWithRsvp, RsvpRow } from "./types";
+
+export { isEphemeralDb };
 
 let client: Client | null = null;
 let schemaReady: Promise<void> | null = null;
@@ -11,10 +14,9 @@ function dbConfig() {
   if (url) {
     return { url, authToken: process.env.TURSO_AUTH_TOKEN };
   }
-  if (process.env.VERCEL) {
-    throw new Error(
-      "Vercel has no persistent disk. Set TURSO_DATABASE_URL and TURSO_AUTH_TOKEN (free Turso DB). See README.",
-    );
+  if (isEphemeralDb()) {
+    // Serverless has no persistent disk; /tmp is writable for this instance.
+    return { url: "file:/tmp/invite.db" };
   }
   const dir = join(process.cwd(), "data");
   mkdirSync(dir, { recursive: true });
