@@ -37,7 +37,18 @@ function fieldErrorPath(formData: FormData, message: string) {
   if (eventId && token) {
     return `/e/${eventId}/manage?t=${encodeURIComponent(token)}&error=${encodeURIComponent(message)}`;
   }
-  return `/?error=${encodeURIComponent(message)}`;
+  const params = new URLSearchParams();
+  params.set("error", message);
+  params.set("draft", "1");
+  for (const key of ["title", "location", "hostName", "startsDate", "startsTime"] as const) {
+    const value = required(formData, key);
+    if (value) params.set(key, value);
+  }
+  if (asBool(formData.get("askComment"))) params.set("askComment", "1");
+  if (asBool(formData.get("askAdults"))) params.set("askAdults", "1");
+  if (asBool(formData.get("askKids"))) params.set("askKids", "1");
+  if (asBool(formData.get("askInfants"))) params.set("askInfants", "1");
+  return `/?${params.toString()}`;
 }
 
 function firstMatch(formData: FormData, key: string, re: RegExp) {
