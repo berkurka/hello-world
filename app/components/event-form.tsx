@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { formatWhen } from "@/lib/format";
 import type { EventRow } from "@/lib/types";
 
@@ -22,6 +22,14 @@ function splitStarts(event?: EventRow) {
   return { date: defaultEventDate(), time: "18:00" };
 }
 
+function isDate(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function isTime(value: string) {
+  return /^\d{2}:\d{2}/.test(value);
+}
+
 type Props = {
   event?: EventRow;
   action: (formData: FormData) => void | Promise<void>;
@@ -34,6 +42,7 @@ export function EventForm({ event, action, submitLabel, children }: Props) {
   const [startsDate, setStartsDate] = useState(initial.date);
   const [startsTime, setStartsTime] = useState(initial.time);
   const [error, setError] = useState("");
+  const [pending, startTransition] = useTransition();
 
   return (
     <form
@@ -42,25 +51,17 @@ export function EventForm({ event, action, submitLabel, children }: Props) {
       className="stack"
       style={{ marginTop: "1rem" }}
       onSubmit={(e) => {
-        const form = e.currentTarget;
-        const dateInputs = [
-          ...form.querySelectorAll<HTMLInputElement>('input[name="startsDate"]'),
-        ];
-        const timeInputs = [
-          ...form.querySelectorAll<HTMLInputElement>('input[name="startsTime"]'),
-        ];
-        dateInputs.forEach((el) => {
-          el.value = startsDate;
-        });
-        timeInputs.forEach((el) => {
-          el.value = startsTime;
-        });
-        const dateOk = /^\d{4}-\d{2}-\d{2}$/.test(startsDate);
-        const timeOk = /^\d{2}:\d{2}/.test(startsTime);
-        if (!dateOk || !timeOk) {
-          e.preventDefault();
+        e.preventDefault();
+        if (!isDate(startsDate) || !isTime(startsTime)) {
           setError("Enter a date (YYYY-MM-DD) and time (HH:MM).");
+          return;
         }
+        const fd = new FormData(e.currentTarget);
+        fd.set("startsDate", startsDate);
+        fd.set("startsTime", startsTime);
+        startTransition(() => {
+          void action(fd);
+        });
       }}
     >
       {children}
@@ -81,8 +82,12 @@ export function EventForm({ event, action, submitLabel, children }: Props) {
             lang="en-CA"
             autoComplete="off"
             value={startsDate}
-            onChange={(e) => setStartsDate(e.target.value)}
-            onInput={(e) => setStartsDate(e.currentTarget.value)}
+            onChange={(e) => {
+              if (isDate(e.target.value)) setStartsDate(e.target.value);
+            }}
+            onInput={(e) => {
+              if (isDate(e.currentTarget.value)) setStartsDate(e.currentTarget.value);
+            }}
           />
         </label>
         <label className="field">
@@ -93,8 +98,12 @@ export function EventForm({ event, action, submitLabel, children }: Props) {
             required
             autoComplete="off"
             value={startsTime}
-            onChange={(e) => setStartsTime(e.target.value)}
-            onInput={(e) => setStartsTime(e.currentTarget.value)}
+            onChange={(e) => {
+              if (isTime(e.target.value)) setStartsTime(e.target.value.slice(0, 5));
+            }}
+            onInput={(e) => {
+              if (isTime(e.currentTarget.value)) setStartsTime(e.currentTarget.value.slice(0, 5));
+            }}
           />
         </label>
       </div>
@@ -132,8 +141,8 @@ export function EventForm({ event, action, submitLabel, children }: Props) {
         </label>
       </fieldset>
       {event ? <p className="hint">Preview: {formatWhen(event.starts_at)}</p> : null}
-      <button className="btn" type="submit">
-        {submitLabel}
+      <button className="btn" type="submit" disabled={pending}>
+        {pending ? "Saving…" : submitLabel}
       </button>
     </form>
   );

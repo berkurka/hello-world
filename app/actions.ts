@@ -27,10 +27,19 @@ async function requireOrganizer(formData: FormData) {
   return event;
 }
 
+function firstMatch(formData: FormData, key: string, re: RegExp) {
+  for (const value of formData.getAll(key)) {
+    const text = String(value).trim();
+    if (re.test(text)) return text;
+  }
+  return "";
+}
+
 function eventFields(formData: FormData) {
   const title = required(formData, "title");
-  const startsDate = required(formData, "startsDate");
-  const startsTime = required(formData, "startsTime");
+  const startsDate = firstMatch(formData, "startsDate", /^\d{4}-\d{2}-\d{2}$/);
+  const startsTimeRaw = firstMatch(formData, "startsTime", /^\d{2}:\d{2}/);
+  const startsTime = startsTimeRaw.slice(0, 5);
   const startsAt = startsDate && startsTime ? `${startsDate}T${startsTime}` : "";
   const location = required(formData, "location");
   const hostName = required(formData, "hostName");
