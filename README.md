@@ -2,7 +2,7 @@
 
 A small Evite-style app: create an event, email a personalized invitation card, and collect RSVPs (yes/no, optional comment, guest counts).
 
-Built on Next.js App Router. Locally it uses a SQLite file. On Vercel it uses a free [Turso](https://turso.tech) libSQL database (serverless has no persistent disk).
+Built on Next.js App Router. Locally it uses a SQLite file at `./data/invite.db`. On Vercel without Turso it uses a temporary `file:/tmp/invite.db` so previews load; that data can disappear between serverless instances. Set a free [Turso](https://turso.tech) database for production.
 
 ## Setup
 
@@ -22,8 +22,8 @@ Open [http://localhost:3000](http://localhost:3000).
 | `GMAIL_USER` | To send email | Your Gmail address. |
 | `GMAIL_APP_PASSWORD` | To send email | Gmail [App Password](https://myaccount.google.com/apppasswords) (not your normal password). |
 | `FROM_NAME` | Optional | From display name (default `Invite`). Gmail still sends as `GMAIL_USER`. |
-| `TURSO_DATABASE_URL` | On Vercel | Turso database URL (`libsql://…`). Locally, omit this to use `./data/invite.db`. |
-| `TURSO_AUTH_TOKEN` | On Vercel | Turso auth token. |
+| `TURSO_DATABASE_URL` | Production on Vercel | Turso database URL (`libsql://…`). Locally, omit this to use `./data/invite.db`. On Vercel without this, the app uses `/tmp/invite.db` (ephemeral). |
+| `TURSO_AUTH_TOKEN` | With Turso URL | Turso auth token. |
 
 Do not commit `.env.local`. Copy `.env.example` and fill in values.
 
@@ -39,7 +39,7 @@ If SMTP is not configured, you can still add invitees and copy each unique RSVP 
 
 ### Turso (Vercel)
 
-SQLite files do not persist on Vercel serverless, so production needs a remote DB. Turso’s free tier is enough for this MVP.
+Vercel serverless has no persistent disk. Without Turso env vars the app still starts and uses `/tmp/invite.db` so previews work; a banner warns that data is temporary. For production, set Turso so events and RSVPs persist:
 
 1. Create a free account at [turso.tech](https://turso.tech).
 2. Create a database (CLI or dashboard).
