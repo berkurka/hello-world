@@ -5,6 +5,9 @@ export type EventRow = {
   starts_at: string;
   location: string;
   host_name: string;
+  host_email: string | null;
+  host_claim_token: string | null;
+  host_claimed_at: string | null;
   ask_comment: number;
   ask_adults: number;
   ask_kids: number;

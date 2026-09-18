@@ -2,6 +2,7 @@ import { mkdirSync } from "fs";
 import { join } from "path";
 import { createClient, type Client } from "@libsql/client";
 import { isEphemeralDb } from "./db-env";
+import { claimTokenIsOpen } from "./host-claim";
 import type { EventRow, InviteeRow, InviteeWithRsvp, RsvpRow } from "./types";
 
 export { isEphemeralDb };
@@ -28,6 +29,20 @@ export function getDb() {
   return client;
 }
 
+function isAlreadyExistsError(err: unknown) {
+  const message = err instanceof Error ? err.message : String(err);
+  return /duplicate column name/i.test(message) || /already exists/i.test(message);
+}
+
+async function addColumnIfMissing(table: string, column: string, definition: string) {
+  const db = getDb();
+  try {
+    await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  } catch (err) {
+    if (!isAlreadyExistsError(err)) throw err;
+  }
+}
+
 async function ensureSchema() {
   const db = getDb();
   const statements = [
@@ -38,6 +53,9 @@ async function ensureSchema() {
       starts_at TEXT NOT NULL,
       location TEXT NOT NULL DEFAULT '',
       host_name TEXT NOT NULL,
+      host_email TEXT,
+      host_claim_token TEXT,
+      host_claimed_at TEXT,
       ask_comment INTEGER NOT NULL DEFAULT 1,
       ask_adults INTEGER NOT NULL DEFAULT 1,
       ask_kids INTEGER NOT NULL DEFAULT 0,
@@ -71,10 +89,22 @@ async function ensureSchema() {
   for (const sql of statements) {
     await db.execute(sql);
   }
+  // Existing DBs were created without host_* columns; CREATE IF NOT EXISTS is a no-op there.
+  await addColumnIfMissing("events", "host_email", "TEXT");
+  await addColumnIfMissing("events", "host_claim_token", "TEXT");
+  await addColumnIfMissing("events", "host_claimed_at", "TEXT");
+  await db.execute(
+    `CREATE UNIQUE INDEX IF NOT EXISTS events_host_claim_token ON events(host_claim_token) WHERE host_claim_token IS NOT NULL`,
+  );
 }
 
 export async function readyDb() {
-  if (!schemaReady) schemaReady = ensureSchema();
+  if (!schemaReady) {
+    schemaReady = ensureSchema().catch((err) => {
+      schemaReady = null;
+      throw err;
+    });
+  }
   await schemaReady;
   return getDb();
 }
@@ -104,6 +134,22 @@ export function getEventForOrganizer(id: string, token: string) {
     `SELECT * FROM events WHERE id = ? AND admin_token = ?`,
     [id, token],
   );
+}
+
+export function getEventByClaimToken(token: string) {
+  return queryOne<EventRow>(`SELECT * FROM events WHERE host_claim_token = ?`, [token]);
+}
+
+export async function claimHostDashboard(token: string) {
+  const event = await getEventByClaimToken(token);
+  if (!event || !claimTokenIsOpen(event)) return null;
+  if (!event.host_claimed_at) {
+    await run(
+      `UPDATE events SET host_claimed_at = ? WHERE id = ? AND host_claim_token = ? AND host_claimed_at IS NULL`,
+      [new Date().toISOString(), event.id, token],
+    );
+  }
+  return event;
 }
 
 export function getInviteeByToken(token: string) {

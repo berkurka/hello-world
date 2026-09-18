@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { rsvpUrl } from "@/lib/app-url";
+import { hostClaimUrl, rsvpUrl } from "@/lib/app-url";
 import {
   getEvent,
   getEventForOrganizer,
@@ -13,7 +13,7 @@ import {
 } from "@/lib/db";
 import { asBool, asCount, isEmail } from "@/lib/format";
 import { newId, newToken } from "@/lib/ids";
-import { mailConfigured, sendInviteEmail } from "@/lib/mail";
+import { mailConfigured, sendHostClaimEmail, sendInviteEmail } from "@/lib/mail";
 
 function required(formData: FormData, key: string) {
   for (const value of formData.getAll(key)) {
@@ -40,7 +40,7 @@ function fieldErrorPath(formData: FormData, message: string) {
   const params = new URLSearchParams();
   params.set("error", message);
   params.set("draft", "1");
-  for (const key of ["title", "location", "hostName", "startsDate", "startsTime"] as const) {
+  for (const key of ["title", "location", "hostName", "hostEmail", "startsDate", "startsTime"] as const) {
     const value = required(formData, key);
     if (value) params.set(key, value);
   }
@@ -81,6 +81,7 @@ function eventFields(formData: FormData) {
 
 export async function createEvent(formData: FormData) {
   const fields = eventFields(formData);
+  const hostEmail = required(formData, "hostEmail").toLowerCase();
   if (!fields.title) {
     const dest = fieldErrorPath(formData, "Title is required.");
     redirect(dest);
@@ -93,11 +94,16 @@ export async function createEvent(formData: FormData) {
     const dest = fieldErrorPath(formData, "Host name is required.");
     redirect(dest);
   }
+  if (!isEmail(hostEmail)) {
+    const dest = fieldErrorPath(formData, "Host email is required.");
+    redirect(dest);
+  }
   const id = newId();
   const adminToken = newToken();
+  const hostClaimToken = newToken();
   await run(
-    `INSERT INTO events (id, admin_token, title, starts_at, location, host_name, ask_comment, ask_adults, ask_kids, ask_infants, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO events (id, admin_token, title, starts_at, location, host_name, host_email, host_claim_token, host_claimed_at, ask_comment, ask_adults, ask_kids, ask_infants, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
     [
       id,
       adminToken,
@@ -105,6 +111,8 @@ export async function createEvent(formData: FormData) {
       fields.startsAt,
       fields.location,
       fields.hostName,
+      hostEmail,
+      hostClaimToken,
       fields.askComment,
       fields.askAdults,
       fields.askKids,
@@ -112,7 +120,37 @@ export async function createEvent(formData: FormData) {
       new Date().toISOString(),
     ],
   );
-  redirect(`/e/${id}/manage?t=${adminToken}`);
+
+  let mail: "sent" | "skipped" | "failed" = "skipped";
+  if (mailConfigured()) {
+    try {
+      await sendHostClaimEmail({
+        event: {
+          id,
+          admin_token: adminToken,
+          title: fields.title,
+          starts_at: fields.startsAt,
+          location: fields.location,
+          host_name: fields.hostName,
+          host_email: hostEmail,
+          host_claim_token: hostClaimToken,
+          host_claimed_at: null,
+          ask_comment: fields.askComment,
+          ask_adults: fields.askAdults,
+          ask_kids: fields.askKids,
+          ask_infants: fields.askInfants,
+          created_at: new Date().toISOString(),
+        },
+        hostEmail,
+        claimLink: hostClaimUrl(hostClaimToken),
+      });
+      mail = "sent";
+    } catch {
+      mail = "failed";
+    }
+  }
+
+  redirect(`/e/${id}/created?t=${encodeURIComponent(adminToken)}&mail=${mail}`);
 }
 
 export async function updateEvent(formData: FormData) {

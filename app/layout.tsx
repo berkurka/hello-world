@@ -4,8 +4,8 @@ import { isEphemeralDb } from "@/lib/db-env";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Invite",
-  description: "Create an event, send invites, collect RSVPs.",
+  title: "Partyz",
+  description: "Plan and organize your party here in 3 steps.",
 };
 
 export default function RootLayout({
@@ -18,7 +18,7 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <header className="top">
-          <Link href="/">Invite</Link>
+          <Link href="/">Partyz</Link>
         </header>
         {ephemeral ? (
           <p className="warn banner">

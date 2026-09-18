@@ -1,9 +1,11 @@
 import { addInvitee, sendAllUnsent, sendInvite, updateEvent } from "@/app/actions";
+import { CopyButton } from "@/app/components/copy-button";
 import { EventForm } from "@/app/components/event-form";
 import { Flash } from "@/app/components/flash";
 import { getEventForOrganizer, listInvitees } from "@/lib/db";
 import { attendingLabel, formatWhen } from "@/lib/format";
 import { rsvpUrl } from "@/lib/app-url";
+import { mailConfigured } from "@/lib/mail";
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +23,7 @@ export default async function ManageEventPage({
   const event = await getEventForOrganizer(id, t);
   if (!event) notFound();
   const invitees = await listInvitees(event.id);
+  const canEmail = mailConfigured();
 
   const yes = invitees.filter((row) => row.attending === 1);
   const no = invitees.filter((row) => row.attending === 0);
@@ -109,15 +112,22 @@ export default async function ManageEventPage({
                     {event.ask_infants ? <td>{row.attending === 1 ? row.infants : "—"}</td> : null}
                     {event.ask_comment ? <td>{row.comment ?? ""}</td> : null}
                     <td>
-                      <p className="mono">{rsvpUrl(row.token)}</p>
-                      <form action={sendInvite}>
-                        <input type="hidden" name="eventId" value={event.id} />
-                        <input type="hidden" name="t" value={t} />
-                        <input type="hidden" name="inviteeId" value={row.id} />
-                        <button className="btn ghost" type="submit">
-                          {row.invited_at ? "Resend email" : "Send email"}
-                        </button>
-                      </form>
+                      <div className="copy-row">
+                        <p className="mono">{rsvpUrl(row.token)}</p>
+                        <CopyButton text={rsvpUrl(row.token)} />
+                      </div>
+                      {canEmail ? (
+                        <form action={sendInvite}>
+                          <input type="hidden" name="eventId" value={event.id} />
+                          <input type="hidden" name="t" value={t} />
+                          <input type="hidden" name="inviteeId" value={row.id} />
+                          <button className="btn ghost small" type="submit">
+                            {row.invited_at ? "Resend email" : "Send email"}
+                          </button>
+                        </form>
+                      ) : (
+                        <p className="hint">Copy the link to invite. Email sending is off.</p>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -147,16 +157,25 @@ export default async function ManageEventPage({
               </button>
             </div>
           </form>
-          <form action={sendAllUnsent} style={{ marginTop: "0.75rem" }}>
-            <input type="hidden" name="eventId" value={event.id} />
-            <input type="hidden" name="t" value={t} />
-            <button className="btn ghost" type="submit">
-              Email everyone who has not been sent an invite
-            </button>
-          </form>
-          <p className="hint" style={{ marginTop: "0.75rem" }}>
-            Emails need Gmail SMTP env vars. Without them, copy the unique RSVP link from the table.
-          </p>
+          {canEmail ? (
+            <form action={sendAllUnsent} style={{ marginTop: "0.75rem" }}>
+              <input type="hidden" name="eventId" value={event.id} />
+              <input type="hidden" name="t" value={t} />
+              <button className="btn ghost" type="submit">
+                Email everyone who has not been sent an invite
+              </button>
+            </form>
+          ) : (
+            <p className="hint" style={{ marginTop: "0.75rem" }}>
+              Email sending is off. Copy each RSVP link from the table to share the invite.
+            </p>
+          )}
+          {canEmail ? (
+            <p className="hint" style={{ marginTop: "0.75rem" }}>
+              You can also copy the unique RSVP link from the table if you would rather share it
+              yourself.
+            </p>
+          ) : null}
         </section>
 
         <section className="card">
