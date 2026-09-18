@@ -112,7 +112,8 @@ export async function readyDb() {
 export async function query<T>(sql: string, args: (string | number | null)[] = []) {
   const db = await readyDb();
   const rs = await db.execute({ sql, args });
-  return rs.rows as unknown as T[];
+  // libSQL rows are not plain objects; client components reject them.
+  return rs.rows.map((row) => JSON.parse(JSON.stringify(row))) as T[];
 }
 
 export async function queryOne<T>(sql: string, args: (string | number | null)[] = []) {
