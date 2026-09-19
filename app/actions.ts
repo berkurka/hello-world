@@ -8,11 +8,18 @@ import {
   getEventForOrganizer,
   getInviteeByToken,
   getRsvp,
+  insertInvitee,
   listInvitees,
   run,
 } from "@/lib/db";
 import { asBool, asCount, isEmail } from "@/lib/format";
 import { newId, newToken } from "@/lib/ids";
+import {
+  applyExistingEmails,
+  INVITEE_CSV_MAX_BYTES,
+  parseInviteeCsv,
+  summarizeInviteeImport,
+} from "@/lib/invitee-csv";
 import { mailConfigured, sendHostClaimEmail, sendInviteEmail } from "@/lib/mail";
 
 function required(formData: FormData, key: string) {
@@ -184,30 +191,64 @@ export async function updateEvent(formData: FormData) {
   redirect(`/e/${event.id}/manage?t=${event.admin_token}&notice=` + encodeURIComponent("Event updated."));
 }
 
+function managePath(
+  event: { id: string; admin_token: string },
+  flash: { notice?: string; error?: string },
+) {
+  const params = new URLSearchParams();
+  params.set("t", event.admin_token);
+  if (flash.notice) params.set("notice", flash.notice);
+  if (flash.error) params.set("error", flash.error);
+  return `/e/${event.id}/manage?${params.toString()}`;
+}
+
 export async function addInvitee(formData: FormData) {
   const event = await requireOrganizer(formData);
   const email = required(formData, "email").toLowerCase();
   const displayName = required(formData, "displayName");
   if (!displayName || !isEmail(email)) {
-    redirect(
-      `/e/${event.id}/manage?t=${event.admin_token}&error=` +
-        encodeURIComponent("Need a display name and a valid email."),
-    );
+    redirect(managePath(event, { error: "Need a display name and a valid email." }));
   }
   try {
-    await run(
-      `INSERT INTO invitees (id, event_id, email, display_name, token, invited_at, created_at)
-       VALUES (?, ?, ?, ?, ?, NULL, ?)`,
-      [newId(), event.id, email, displayName, newToken(), new Date().toISOString()],
-    );
+    await insertInvitee(event.id, email, displayName);
   } catch {
-    redirect(
-      `/e/${event.id}/manage?t=${event.admin_token}&error=` +
-        encodeURIComponent("That email is already on this event."),
-    );
+    redirect(managePath(event, { error: "That email is already on this event." }));
   }
   revalidatePath(`/e/${event.id}/manage`);
-  redirect(`/e/${event.id}/manage?t=${event.admin_token}&notice=` + encodeURIComponent("Invitee added."));
+  redirect(managePath(event, { notice: "Invitee added." }));
+}
+
+export async function importInvitees(formData: FormData) {
+  const event = await requireOrganizer(formData);
+  const file = formData.get("csv");
+  if (!(file instanceof File) || file.size === 0) {
+    redirect(managePath(event, { error: "Choose a CSV file to import." }));
+  }
+  if (file.size > INVITEE_CSV_MAX_BYTES) {
+    redirect(managePath(event, { error: "That file is too large. Use a CSV under 256 KB." }));
+  }
+  const text = await file.text();
+  const existing = await listInvitees(event.id);
+  const plan = applyExistingEmails(
+    parseInviteeCsv(text),
+    existing.map((row) => row.email),
+  );
+  let added = 0;
+  for (const row of plan.toAdd) {
+    try {
+      await insertInvitee(event.id, row.email, row.displayName);
+      added += 1;
+    } catch {
+      plan.skips.push({ line: row.line, reason: "already on this event" });
+    }
+  }
+  plan.skips.sort((a, b) => a.line - b.line);
+  const summary = summarizeInviteeImport(added, plan.skips);
+  revalidatePath(`/e/${event.id}/manage`);
+  if (added === 0) {
+    redirect(managePath(event, { error: summary }));
+  }
+  redirect(managePath(event, { notice: summary }));
 }
 
 async function sendOne(eventId: string, inviteeId: string) {
