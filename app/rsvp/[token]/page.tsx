@@ -29,9 +29,14 @@ export default async function RsvpPage({
   return (
     <main className={photo ? "rsvp-page has-photo" : "rsvp-page"}>
       {photo ? (
-        <div className="rsvp-photo" aria-hidden="true">
-          <img src={photo} alt="" />
-        </div>
+        <>
+          <div className="rsvp-photo" aria-hidden="true">
+            <img src={photo} alt="" />
+          </div>
+          <div className="rsvp-hero" aria-hidden="true">
+            <img src={photo} alt="" />
+          </div>
+        </>
       ) : null}
       <div className="wrap">
         <div className="card stack">

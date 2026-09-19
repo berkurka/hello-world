@@ -267,10 +267,28 @@ button.btn.small {
   inset: 0;
   background: linear-gradient(
     180deg,
-    rgba(244, 239, 230, 0.28) 0%,
-    rgba(244, 239, 230, 0.7) 42%,
-    rgba(244, 239, 230, 0.88) 100%
+    rgba(244, 239, 230, 0.12) 0%,
+    rgba(244, 239, 230, 0.4) 48%,
+    rgba(244, 239, 230, 0.72) 100%
   );
+}
+
+.rsvp-hero {
+  position: relative;
+  z-index: 1;
+  height: min(38vh, 260px);
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+}
+
+.rsvp-hero img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.rsvp-page.has-photo .wrap {
+  margin-top: -2.5rem;
 }
 
 body:has(.rsvp-page.has-photo) {
