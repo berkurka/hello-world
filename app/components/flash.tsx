@@ -5,7 +5,11 @@ export function Flash({
   error?: string;
   notice?: string;
 }) {
-  if (error) return <p className="flash error">{error}</p>;
-  if (notice) return <p className="flash notice">{notice}</p>;
-  return null;
+  if (!error && !notice) return null;
+  return (
+    <>
+      {notice ? <p className="flash notice">{notice}</p> : null}
+      {error ? <p className="flash error">{error}</p> : null}
+    </>
+  );
 }

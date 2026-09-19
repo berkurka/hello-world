@@ -347,3 +347,24 @@ td {
 .section {
   margin-top: 1.5rem;
 }
+
+.import-box {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px dashed var(--line);
+}
+
+.import-box h3 {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.import-box .hint {
+  margin-top: 0.35rem;
+}
+
+input[type="file"] {
+  font: inherit;
+  width: 100%;
+  color: var(--muted);
+}

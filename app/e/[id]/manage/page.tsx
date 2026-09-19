@@ -1,10 +1,11 @@
-import { addInvitee, sendAllUnsent, sendInvite, updateEvent } from "@/app/actions";
+import { addInvitee, importInvitees, sendAllUnsent, sendInvite, updateEvent } from "@/app/actions";
 import { CopyButton } from "@/app/components/copy-button";
 import { EventForm } from "@/app/components/event-form";
 import { Flash } from "@/app/components/flash";
 import { getEventForOrganizer, listInvitees } from "@/lib/db";
 import { attendingLabel, formatWhen } from "@/lib/format";
 import { rsvpUrl } from "@/lib/app-url";
+import { INVITEE_CSV_FILENAME } from "@/lib/invitee-csv";
 import { mailConfigured } from "@/lib/mail";
 import { notFound } from "next/navigation";
 
@@ -157,6 +158,31 @@ export default async function ManageEventPage({
               </button>
             </div>
           </form>
+          <div className="import-box">
+            <h3>Import CSV</h3>
+            <p className="hint">
+              Download a template, fill in display name and email, then upload. Bad rows are
+              skipped; valid ones still import.
+            </p>
+            <p className="actions" style={{ marginTop: "0.75rem" }}>
+              <a className="btn ghost" href={`/${INVITEE_CSV_FILENAME}`} download={INVITEE_CSV_FILENAME}>
+                Download template
+              </a>
+            </p>
+            <form action={importInvitees} className="stack" style={{ marginTop: "0.85rem" }}>
+              <input type="hidden" name="eventId" value={event.id} />
+              <input type="hidden" name="t" value={t} />
+              <label className="field">
+                <span>CSV file</span>
+                <input name="csv" type="file" accept=".csv,text/csv,text/plain" required />
+              </label>
+              <div className="actions">
+                <button className="btn" type="submit">
+                  Import CSV
+                </button>
+              </div>
+            </form>
+          </div>
           {canEmail ? (
             <form action={sendAllUnsent} style={{ marginTop: "0.75rem" }}>
               <input type="hidden" name="eventId" value={event.id} />

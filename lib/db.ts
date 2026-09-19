@@ -3,6 +3,7 @@ import { join } from "path";
 import { createClient, type Client } from "@libsql/client";
 import { isEphemeralDb } from "./db-env";
 import { claimTokenIsOpen } from "./host-claim";
+import { newId, newToken } from "./ids";
 import type { EventRow, InviteeRow, InviteeWithRsvp, RsvpRow } from "./types";
 
 export { isEphemeralDb };
@@ -169,5 +170,13 @@ export function listInvitees(eventId: string) {
      WHERE i.event_id = ?
      ORDER BY i.created_at ASC`,
     [eventId],
+  );
+}
+
+export function insertInvitee(eventId: string, email: string, displayName: string) {
+  return run(
+    `INSERT INTO invitees (id, event_id, email, display_name, token, invited_at, created_at)
+     VALUES (?, ?, ?, ?, ?, NULL, ?)`,
+    [newId(), eventId, email, displayName, newToken(), new Date().toISOString()],
   );
 }
