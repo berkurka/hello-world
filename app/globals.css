@@ -211,8 +211,80 @@ button.btn.small {
   margin-bottom: 1.5rem;
 }
 
-#create {
-  scroll-margin-top: 1rem;
+#create,
+#form-error,
+#event-form-error,
+#event-title,
+#event-date,
+#event-time,
+#event-host-name,
+#event-host-email,
+#event-party-image {
+  scroll-margin-top: 1.25rem;
+}
+
+.field.is-invalid input,
+.field.is-invalid textarea {
+  border-color: var(--bad);
+  box-shadow: 0 0 0 2px rgba(139, 41, 66, 0.18);
+}
+
+.image-preview {
+  width: min(100%, 280px);
+  max-height: 160px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  display: block;
+}
+
+.rsvp-page {
+  position: relative;
+  min-height: calc(100vh - 3.5rem);
+  padding-bottom: 1px;
+}
+
+.rsvp-page .wrap {
+  position: relative;
+  z-index: 1;
+}
+
+.rsvp-photo {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.rsvp-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.rsvp-photo::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(244, 239, 230, 0.28) 0%,
+    rgba(244, 239, 230, 0.7) 42%,
+    rgba(244, 239, 230, 0.88) 100%
+  );
+}
+
+body:has(.rsvp-page.has-photo) {
+  background: #1c1014;
+}
+
+body:has(.rsvp-page.has-photo) .top {
+  position: relative;
+  z-index: 2;
+  background: rgba(244, 239, 230, 0.92);
+}
+
+.rsvp-page.has-photo .card {
+  background: rgba(255, 253, 248, 0.96);
 }
 
 .copy-row {

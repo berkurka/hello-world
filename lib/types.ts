@@ -12,7 +12,15 @@ export type EventRow = {
   ask_adults: number;
   ask_kids: number;
   ask_infants: number;
+  party_image_mime: string | null;
   created_at: string;
+};
+
+export type EventImageRow = {
+  event_id: string;
+  mime: string;
+  data: string;
+  updated_at: string;
 };
 
 export type InviteeRow = {
