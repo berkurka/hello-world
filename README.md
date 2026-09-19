@@ -25,6 +25,8 @@ Open [http://localhost:3000](http://localhost:3000).
 | `TURSO_DATABASE_URL` | Production on Vercel | Turso database URL (`libsql://…`). Locally, omit this to use `./data/invite.db`. On Vercel without this, the app uses `/tmp/invite.db` (ephemeral). |
 | `TURSO_AUTH_TOKEN` | With Turso URL | Turso auth token. |
 
+Party images live in the same database as events (local `./data/invite.db` or Turso). No extra blob-storage keys are required. Do not use ephemeral `/tmp` files for images.
+
 Do not commit `.env.local`. Copy `.env.example` and fill in values.
 
 ### Gmail app password
@@ -48,7 +50,7 @@ Vercel serverless has no persistent disk. Without Turso env vars the app still s
 
 ## How to use
 
-1. **Create a party** on the home page: title, date/time, location or notes, host name, and **host email**. Toggle which RSVP fields invitees will see (comment, adults, kids, kids under 12 months). Yes/no is always shown. There is no password or login wall.
+1. **Create a party** on the home page: title, date/time, location or notes, optional party image, host name, and **host email**. Toggle which RSVP fields invitees will see (comment, adults, kids, kids under 12 months). Yes/no is always shown. There is no password or login wall. If a required field is missing, you stay on the form and scroll to the first problem. The optional image (JPEG, PNG, WebP, or GIF, max 1 MB) appears on the generated invite card and as the guest RSVP page background. You can add or replace it later from the manage page. Non-images are rejected.
 2. **Check email / save the dashboard URL.** After create, the app tries to email a claim link if Gmail is configured. The success page always shows the manage URL (`/e/…/manage?t=…`) once, copyable, in case email is missing or delayed.
 3. **Open the dashboard** from the email (`/host/claim?token=…`) or from the saved manage URL. `manage?t=` remains the organizer key.
 4. **Add invitees** by display name + email, or import a CSV with `display_name` and `email` columns (download a template from the manage page). Each person gets a unique RSVP link. Copy that link to share (email sending is optional).
@@ -65,7 +67,7 @@ Each new party stores `host_email`, a unique `host_claim_token`, and `host_claim
 - A bad or expired token shows a plain not-found message.
 - Guest RSVP tokens and `manage?t=` auth are unchanged.
 
-Existing databases get the new columns on startup: the app runs `ALTER TABLE events ADD COLUMN …` and ignores “already exists” errors so this works on local SQLite and Turso.
+Existing databases get the new columns on startup: the app runs `ALTER TABLE events ADD COLUMN …` and ignores “already exists” errors so this works on local SQLite and Turso. Party images use `events.party_image_mime` plus an `event_images` table (bytes stay out of ordinary event reads).
 
 ## Scripts
 
@@ -73,4 +75,5 @@ Existing databases get the new columns on startup: the app runs `ALTER TABLE eve
 npm run dev    # local
 npm run build  # production build
 npm start      # run the production build
+npm test       # unit tests (CSV import + party image validation)
 ```
