@@ -2,13 +2,14 @@
 
 import { useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
-import { formatWhen } from "@/lib/format";
+import { formatWhen, isEmail } from "@/lib/format";
 import type { EventRow } from "@/lib/types";
 
 export type EventDraft = {
   title?: string;
   location?: string;
   hostName?: string;
+  hostEmail?: string;
   startsDate?: string;
   startsTime?: string;
   askComment?: boolean;
@@ -61,6 +62,7 @@ export function EventForm({ event, draft, action, submitLabel, children }: Props
   const [title, setTitle] = useState(draft?.title ?? event?.title ?? "");
   const [location, setLocation] = useState(draft?.location ?? event?.location ?? "");
   const [hostName, setHostName] = useState(draft?.hostName ?? event?.host_name ?? "");
+  const [hostEmail, setHostEmail] = useState(draft?.hostEmail ?? event?.host_email ?? "");
   const [startsDate, setStartsDate] = useState(initial.date);
   const [startsTime, setStartsTime] = useState(initial.time);
   const [askComment, setAskComment] = useState(
@@ -70,10 +72,12 @@ export function EventForm({ event, draft, action, submitLabel, children }: Props
   const [askKids, setAskKids] = useState(draft?.askKids ?? event?.ask_kids === 1);
   const [askInfants, setAskInfants] = useState(draft?.askInfants ?? event?.ask_infants === 1);
   const [error, setError] = useState("");
+  const isCreate = !event;
   const valuesRef = useRef({
     title,
     location,
     hostName,
+    hostEmail,
     startsDate,
     startsTime,
     askComment,
@@ -85,6 +89,7 @@ export function EventForm({ event, draft, action, submitLabel, children }: Props
     title,
     location,
     hostName,
+    hostEmail,
     startsDate,
     startsTime,
     askComment,
@@ -108,6 +113,14 @@ export function EventForm({ event, draft, action, submitLabel, children }: Props
     if (!nextHost) {
       setError("Host name is required.");
       return;
+    }
+    if (isCreate) {
+      const nextEmail = v.hostEmail.trim();
+      if (!isEmail(nextEmail)) {
+        setError("Host email is required.");
+        return;
+      }
+      formData.set("hostEmail", nextEmail.toLowerCase());
     }
     setError("");
     formData.set("title", nextTitle);
@@ -199,6 +212,21 @@ export function EventForm({ event, draft, action, submitLabel, children }: Props
           placeholder="Alex"
         />
       </label>
+      {isCreate ? (
+        <label className="field">
+          <span>Host email</span>
+          <input
+            name="hostEmail"
+            type="email"
+            required
+            value={hostEmail}
+            onChange={(e) => setHostEmail(e.target.value)}
+            placeholder="you@example.com"
+            autoComplete="email"
+          />
+          <span className="hint">We'll email a dashboard link. No password, no account.</span>
+        </label>
+      ) : null}
       <fieldset className="toggles">
         <legend>RSVP fields for invitees</legend>
         <p className="hint">Yes / no is always shown. Turn on anything else you want to collect.</p>

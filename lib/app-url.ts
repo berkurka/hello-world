@@ -13,6 +13,10 @@ export function manageUrl(eventId: string, adminToken: string) {
   return `${getAppUrl()}/e/${eventId}/manage?t=${adminToken}`;
 }
 
+export function hostClaimUrl(token: string) {
+  return `${getAppUrl()}/host/claim?token=${encodeURIComponent(token)}`;
+}
+
 export function inviteCardUrl(token: string) {
   return `${getAppUrl()}/api/invite-card/${token}`;
 }

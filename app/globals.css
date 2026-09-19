@@ -51,6 +51,15 @@ a {
   margin-bottom: 1.5rem;
 }
 
+.kicker {
+  color: var(--wine);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 700;
+  font-size: 0.92rem;
+  margin-bottom: 0.45rem;
+}
+
 .hero h1,
 .card h1,
 .card h2 {
@@ -162,6 +171,60 @@ button.btn:hover {
   background: transparent;
   color: var(--wine);
   border: 1px solid var(--wine);
+}
+
+.btn.small,
+button.btn.small {
+  padding: 0.3rem 0.55rem;
+  font-size: 0.85rem;
+}
+
+.steps {
+  list-style: none;
+  display: grid;
+  gap: 0.75rem;
+  margin: 0 0 1.25rem;
+}
+
+@media (min-width: 800px) {
+  .steps {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+}
+
+.step {
+  background: var(--card);
+  border: 1px solid var(--line);
+  padding: 1rem 1.1rem;
+}
+
+.step b {
+  display: block;
+  color: var(--wine);
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 0.25rem;
+}
+
+.cta-row {
+  margin-bottom: 1.5rem;
+}
+
+#create {
+  scroll-margin-top: 1rem;
+}
+
+.copy-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: flex-start;
+}
+
+.copy-row .mono {
+  flex: 1;
+  min-width: 10rem;
 }
 
 .actions {

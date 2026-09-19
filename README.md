@@ -1,6 +1,6 @@
-# Invite
+# Partyz
 
-A small Evite-style app: create an event, email a personalized invitation card, and collect RSVPs (yes/no, optional comment, guest counts).
+A small party-planning app: create a party, share invite links, and collect RSVPs (yes/no, optional comment, guest counts).
 
 Built on Next.js App Router. Locally it uses a SQLite file at `./data/invite.db`. On Vercel without Turso it uses a temporary `file:/tmp/invite.db` so previews load; that data can disappear between serverless instances. Set a free [Turso](https://turso.tech) database for production.
 
@@ -18,10 +18,10 @@ Open [http://localhost:3000](http://localhost:3000).
 
 | Name | Required | Purpose |
 | --- | --- | --- |
-| `NEXT_PUBLIC_APP_URL` | Recommended | Base URL for RSVP links, e.g. `http://localhost:3000` or `https://your-app.vercel.app`. On Vercel, `VERCEL_URL` is used if this is empty. |
+| `NEXT_PUBLIC_APP_URL` | Recommended | Base URL for RSVP and claim links, e.g. `http://localhost:3000` or `https://your-app.vercel.app`. On Vercel, `VERCEL_URL` is used if this is empty. |
 | `GMAIL_USER` | To send email | Your Gmail address. |
 | `GMAIL_APP_PASSWORD` | To send email | Gmail [App Password](https://myaccount.google.com/apppasswords) (not your normal password). |
-| `FROM_NAME` | Optional | From display name (default `Invite`). Gmail still sends as `GMAIL_USER`. |
+| `FROM_NAME` | Optional | From display name (default `Partyz`). Gmail still sends as `GMAIL_USER`. |
 | `TURSO_DATABASE_URL` | Production on Vercel | Turso database URL (`libsql://…`). Locally, omit this to use `./data/invite.db`. On Vercel without this, the app uses `/tmp/invite.db` (ephemeral). |
 | `TURSO_AUTH_TOKEN` | With Turso URL | Turso auth token. |
 
@@ -31,11 +31,11 @@ Do not commit `.env.local`. Copy `.env.example` and fill in values.
 
 1. Turn on 2-Step Verification for the Google account.
 2. Open [App passwords](https://myaccount.google.com/apppasswords).
-3. Create an app password (name it anything, e.g. “Invite”).
+3. Create an app password (name it anything, e.g. “Partyz”).
 4. Paste the 16-character password into `GMAIL_APP_PASSWORD`. Spaces are fine.
 5. Set `GMAIL_USER` to that Gmail address.
 
-If SMTP is not configured, you can still add invitees and copy each unique RSVP link from the organizer page.
+If SMTP is not configured, creating a party still works. The success screen always shows a copyable dashboard URL. You can add invitees and copy each unique RSVP link from the organizer page. Email CTAs stay in the background until mail is configured.
 
 ### Turso (Vercel)
 
@@ -48,12 +48,24 @@ Vercel serverless has no persistent disk. Without Turso env vars the app still s
 
 ## How to use
 
-1. **Create an event** on the home page: title, date/time, location or notes, host name. Toggle which RSVP fields invitees will see (comment, adults, kids, kids under 12 months). Yes/no is always shown.
-2. **Save the manage URL** (`/e/…/manage?t=…`). That token is the organizer key — there is no login.
-3. **Add invitees** by display name + email. Each person gets a unique RSVP link.
-4. **Send invite** (or send all unsent). The email includes a generated invitation image with their name and the RSVP link.
+1. **Create a party** on the home page: title, date/time, location or notes, host name, and **host email**. Toggle which RSVP fields invitees will see (comment, adults, kids, kids under 12 months). Yes/no is always shown. There is no password or login wall.
+2. **Check email / save the dashboard URL.** After create, the app tries to email a claim link if Gmail is configured. The success page always shows the manage URL (`/e/…/manage?t=…`) once, copyable, in case email is missing or delayed.
+3. **Open the dashboard** from the email (`/host/claim?token=…`) or from the saved manage URL. `manage?t=` remains the organizer key.
+4. **Add invitees** by display name + email. Each person gets a unique RSVP link. Copy that link to share (email sending is optional).
 5. **Invitees open the link** (no login): yes/no, optional comment, and only the count fields you enabled. Saving shows a confirmation. They can change the response later.
 6. **Organizer view** on the manage page lists RSVPs and totals for yes/no/pending and enabled count fields.
+
+## Host claim tokens
+
+Each new party stores `host_email`, a unique `host_claim_token`, and `host_claimed_at` (null until opened).
+
+- Opening `/host/claim?token=…` marks the party claimed and redirects to `/e/{id}/manage?t={admin_token}`.
+- Unclaimed tokens expire **7 days** after `created_at`.
+- Opening an already-claimed token still redirects to the dashboard (so the email remains useful).
+- A bad or expired token shows a plain not-found message.
+- Guest RSVP tokens and `manage?t=` auth are unchanged.
+
+Existing databases get the new columns on startup: the app runs `ALTER TABLE events ADD COLUMN …` and ignores “already exists” errors so this works on local SQLite and Turso.
 
 ## Scripts
 
