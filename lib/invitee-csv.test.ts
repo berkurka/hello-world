@@ -5,7 +5,7 @@ import {
   inviteeCsvTemplate,
   parseInviteeCsv,
   summarizeInviteeImport,
-} from "./invitee-csv.ts";
+} from "./invitee-csv";
 
 test("template uses invitee columns and fake placeholder rows", () => {
   const csv = inviteeCsvTemplate();

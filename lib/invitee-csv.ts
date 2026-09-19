@@ -1,4 +1,4 @@
-import { isEmail } from "./format.ts";
+import { isEmail } from "./format";
 
 export const INVITEE_CSV_FILENAME = "partyz-invitees-template.csv";
 export const INVITEE_CSV_HEADERS = ["display_name", "email"] as const;
