@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { hostClaimUrl, rsvpUrl } from "@/lib/app-url";
 import {
+  emailsUsedOnEvent,
   getEvent,
   getEventForOrganizer,
   getInviteeByToken,
@@ -12,11 +13,11 @@ import {
   listInvitees,
   run,
 } from "@/lib/db";
-import { asBool, asCount, isEmail } from "@/lib/format";
+import { asBool, asCount, isEmail, normalizeStoredEmail } from "@/lib/format";
+import { familyInviteNotice, unsentBatchNotice } from "@/lib/invite-delivery";
 import { newId, newToken } from "@/lib/ids";
 import {
   applyExistingEmails,
-  emailsInUse,
   INVITEE_CSV_MAX_BYTES,
   parseInviteeCsv,
   summarizeInviteeImport,
@@ -205,11 +206,10 @@ function managePath(
 
 export async function addInvitee(formData: FormData) {
   const event = await requireOrganizer(formData);
-  const email = required(formData, "email").toLowerCase();
-  const email2Raw = required(formData, "email2").toLowerCase();
-  const email2 = email2Raw || null;
+  const email = normalizeStoredEmail(required(formData, "email"));
+  const email2 = normalizeStoredEmail(required(formData, "email2"));
   const displayName = required(formData, "displayName");
-  if (!displayName || !isEmail(email)) {
+  if (!displayName || !email || !isEmail(email)) {
     redirect(managePath(event, { error: "Need a family or guest name and a valid email." }));
   }
   if (email2 && !isEmail(email2)) {
@@ -218,8 +218,7 @@ export async function addInvitee(formData: FormData) {
   if (email2 && email2 === email) {
     redirect(managePath(event, { error: "The two emails are the same." }));
   }
-  const existing = await listInvitees(event.id);
-  const taken = emailsInUse(existing.flatMap((row) => [row.email, row.email2]));
+  const taken = await emailsUsedOnEvent(event.id);
   if (taken.has(email) || (email2 && taken.has(email2))) {
     redirect(managePath(event, { error: "That email is already used on this event." }));
   }
@@ -242,11 +241,7 @@ export async function importInvitees(formData: FormData) {
     redirect(managePath(event, { error: "That file is too large. Use a CSV under 256 KB." }));
   }
   const text = await file.text();
-  const existing = await listInvitees(event.id);
-  const plan = applyExistingEmails(
-    parseInviteeCsv(text),
-    existing.flatMap((row) => [row.email, row.email2]),
-  );
+  const plan = applyExistingEmails(parseInviteeCsv(text), await emailsUsedOnEvent(event.id));
   let added = 0;
   for (const row of plan.toAdd) {
     try {
@@ -265,7 +260,7 @@ export async function importInvitees(formData: FormData) {
   redirect(managePath(event, { notice: summary }));
 }
 
-async function sendOne(eventId: string, inviteeId: string) {
+async function deliverInvite(eventId: string, inviteeId: string) {
   const event = await getEvent(eventId);
   if (!event) throw new Error("Event not found");
   const invitees = await listInvitees(eventId);
@@ -274,31 +269,38 @@ async function sendOne(eventId: string, inviteeId: string) {
   if (!mailConfigured()) {
     throw new Error("Email is not configured. Copy the RSVP link below, or set GMAIL_USER and GMAIL_APP_PASSWORD.");
   }
-  await sendInviteEmail({
+  const delivery = await sendInviteEmail({
     event,
     invitee,
     rsvpLink: rsvpUrl(invitee.token),
   });
-  await run(`UPDATE invitees SET invited_at = ? WHERE id = ?`, [
-    new Date().toISOString(),
-    invitee.id,
-  ]);
+  if (delivery.sent.length > 0) {
+    await run(`UPDATE invitees SET invited_at = ? WHERE id = ?`, [
+      new Date().toISOString(),
+      invitee.id,
+    ]);
+  }
+  return delivery;
 }
 
 export async function sendInvite(formData: FormData) {
   const event = await requireOrganizer(formData);
   const inviteeId = required(formData, "inviteeId");
-  const invitees = await listInvitees(event.id);
-  const invitee = invitees.find((row) => row.id === inviteeId);
+  let delivery;
   try {
-    await sendOne(event.id, inviteeId);
+    delivery = await deliverInvite(event.id, inviteeId);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Could not send invite.";
     redirect(`/e/${event.id}/manage?t=${event.admin_token}&error=` + encodeURIComponent(message));
   }
   revalidatePath(`/e/${event.id}/manage`);
-  const notice = invitee?.email2 ? "Invite sent to both emails." : "Invite sent.";
-  redirect(`/e/${event.id}/manage?t=${event.admin_token}&notice=` + encodeURIComponent(notice));
+  if (delivery.sent.length === 0) {
+    const who = delivery.failed.join(", ");
+    redirect(
+      managePath(event, { error: who ? `Could not email ${who}.` : "Could not send invite." }),
+    );
+  }
+  redirect(managePath(event, { notice: familyInviteNotice(delivery.sent, delivery.failed) }));
 }
 
 export async function sendAllUnsent(formData: FormData) {
@@ -308,19 +310,30 @@ export async function sendAllUnsent(formData: FormData) {
   if (pending.length === 0) {
     redirect(`/e/${event.id}/manage?t=${event.admin_token}&notice=` + encodeURIComponent("No unsent invites."));
   }
-  try {
-    for (const invitee of pending) {
-      await sendOne(event.id, invitee.id);
+  let sentFamilies = 0;
+  const failed: string[] = [];
+  let stopped: string | null = null;
+  for (const invitee of pending) {
+    try {
+      const delivery = await deliverInvite(event.id, invitee.id);
+      if (delivery.sent.length > 0) sentFamilies += 1;
+      failed.push(...delivery.failed);
+    } catch (err) {
+      stopped = err instanceof Error ? err.message : "Could not send invites.";
+      break;
     }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Could not send invites.";
-    redirect(`/e/${event.id}/manage?t=${event.admin_token}&error=` + encodeURIComponent(message));
   }
   revalidatePath(`/e/${event.id}/manage`);
-  redirect(
-    `/e/${event.id}/manage?t=${event.admin_token}&notice=` +
-      encodeURIComponent(`Sent ${pending.length} invite${pending.length === 1 ? "" : "s"}.`),
-  );
+  if (sentFamilies === 0) {
+    const who = failed.join(", ");
+    redirect(
+      managePath(event, {
+        error: stopped || (who ? `Could not email ${who}.` : "Could not send invites."),
+      }),
+    );
+  }
+  const notice = unsentBatchNotice(sentFamilies, failed);
+  redirect(managePath(event, { notice: stopped ? `${notice} ${stopped}` : notice }));
 }
 
 export async function saveRsvp(formData: FormData) {

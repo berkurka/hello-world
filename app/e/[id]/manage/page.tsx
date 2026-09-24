@@ -26,6 +26,12 @@ export default async function ManageEventPage({
   const invitees = await listInvitees(event.id);
   const canEmail = mailConfigured();
 
+  const columnCount =
+    4 +
+    (event.ask_adults ? 1 : 0) +
+    (event.ask_kids ? 1 : 0) +
+    (event.ask_infants ? 1 : 0) +
+    (event.ask_comment ? 1 : 0);
   const yes = invitees.filter((row) => row.attending === 1);
   const no = invitees.filter((row) => row.attending === 0);
   const pending = invitees.filter((row) => row.attending === null);
@@ -100,7 +106,7 @@ export default async function ManageEventPage({
             <tbody>
               {invitees.length === 0 ? (
                 <tr>
-                  <td colSpan={8}>No invitees yet.</td>
+                  <td colSpan={columnCount}>No invitees yet.</td>
                 </tr>
               ) : (
                 invitees.map((row) => (

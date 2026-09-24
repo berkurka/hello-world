@@ -1,6 +1,7 @@
 import nodemailer from "nodemailer";
 import { inviteCardPng } from "./invite-card";
 import { formatWhen } from "./format";
+import { inviteRecipients, type InviteDelivery } from "./invite-delivery";
 import type { EventRow, InviteeRow } from "./types";
 
 export function mailConfigured() {
@@ -29,8 +30,12 @@ export async function sendInviteEmail(opts: {
   event: EventRow;
   invitee: InviteeRow;
   rsvpLink: string;
-}) {
+}): Promise<InviteDelivery> {
   const { event, invitee, rsvpLink } = opts;
+  const recipients = inviteRecipients(invitee);
+  if (recipients.length === 0) {
+    throw new Error("Invitee has no email address.");
+  }
   const when = formatWhen(event.starts_at);
   const png = await inviteCardPng({
     guestName: invitee.display_name,
@@ -40,17 +45,8 @@ export async function sendInviteEmail(opts: {
     hostName: event.host_name,
   });
   const fromUser = process.env.GMAIL_USER!;
-  const to = [
-    ...new Set(
-      [invitee.email, invitee.email2].flatMap((value) => {
-        const email = value?.trim();
-        return email ? [email] : [];
-      }),
-    ),
-  ];
-  await transporter().sendMail({
+  const message = {
     from: `"${fromName().replace(/"/g, "")}" <${fromUser}>`,
-    to,
     subject: `You're invited: ${event.title}`,
     text: [
       `Hi ${invitee.display_name},`,
@@ -81,7 +77,18 @@ export async function sendInviteEmail(opts: {
         cid: "invitation",
       },
     ],
-  });
+  };
+  const sent: string[] = [];
+  const failed: string[] = [];
+  for (const email of recipients) {
+    try {
+      await transporter().sendMail({ ...message, to: email });
+      sent.push(email);
+    } catch {
+      failed.push(email);
+    }
+  }
+  return { sent, failed };
 }
 
 export async function sendHostClaimEmail(opts: {

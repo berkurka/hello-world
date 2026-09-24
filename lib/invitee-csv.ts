@@ -1,4 +1,4 @@
-import { isEmail } from "./format";
+import { isEmail, normalizeStoredEmail } from "./format";
 
 export const INVITEE_CSV_FILENAME = "partyz-invitees-template.csv";
 export const INVITEE_CSV_HEADERS = ["name", "email", "email2"] as const;
@@ -60,7 +60,7 @@ function isEmail2Header(value: string) {
 export function emailsInUse(values: Iterable<string | null | undefined>) {
   const taken = new Set<string>();
   for (const value of values) {
-    const email = (value ?? "").trim().toLowerCase();
+    const email = normalizeStoredEmail(value);
     if (email) taken.add(email);
   }
   return taken;

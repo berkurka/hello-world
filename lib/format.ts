@@ -25,6 +25,11 @@ export function isEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
+export function normalizeStoredEmail(value: string | null | undefined) {
+  const email = (value ?? "").trim().toLowerCase();
+  return email || null;
+}
+
 export function attendingLabel(value: number | null) {
   if (value === 1) return "Yes";
   if (value === 0) return "No";

@@ -65,7 +65,7 @@ Each new party stores `host_email`, a unique `host_claim_token`, and `host_claim
 - A bad or expired token shows a plain not-found message.
 - Guest RSVP tokens and `manage?t=` auth are unchanged.
 
-Existing databases get the new columns on startup: the app runs `ALTER TABLE events ADD COLUMN …` and `ALTER TABLE invitees ADD COLUMN email2 TEXT`, and ignores “already exists” errors so this works on local SQLite and Turso. `display_name` stays the family or guest label. One invitee row is still one token and one RSVP.
+Existing databases get new columns on startup. `CREATE TABLE IF NOT EXISTS` does not alter a table that is already there, so the app reads `PRAGMA table_info` and runs `ALTER TABLE … ADD COLUMN` only when a column is missing: `events.host_email`, `events.host_claim_token`, `events.host_claimed_at`, and `invitees.email2`. That is safe to repeat on local SQLite and Turso. `display_name` stays the family or guest label. One invitee row is still one token and one RSVP. Rows saved before `email2` existed keep a null second address and the same link.
 
 ## Scripts
 
