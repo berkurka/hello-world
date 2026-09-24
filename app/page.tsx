@@ -1,6 +1,5 @@
 import { createEvent } from "@/app/actions";
 import { EventForm } from "@/app/components/event-form";
-import { Flash } from "@/app/components/flash";
 import { mailConfigured } from "@/lib/mail";
 
 export default async function Home({
@@ -73,10 +72,14 @@ export default async function Home({
         </a>
       </p>
       <div className="card" id="create">
-        <Flash error={error} />
         <h2>Create your party</h2>
         <p className="lede">Title, when, where, and your email. That's enough to get started.</p>
-        <EventForm action={createEvent} submitLabel="Create your party" draft={draft} />
+        <EventForm
+          action={createEvent}
+          submitLabel="Create your party"
+          draft={draft}
+          initialError={error}
+        />
       </div>
     </main>
   );

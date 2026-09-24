@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { getEventImageDataUrl } from "./db";
 import { inviteCardPng } from "./invite-card";
 import { formatWhen } from "./format";
 import { inviteRecipients, type InviteDelivery } from "./invite-delivery";
@@ -37,12 +38,14 @@ export async function sendInviteEmail(opts: {
     throw new Error("Invitee has no email address.");
   }
   const when = formatWhen(event.starts_at);
+  const imageSrc = event.party_image_mime ? await getEventImageDataUrl(event.id) : null;
   const png = await inviteCardPng({
     guestName: invitee.display_name,
     title: event.title,
     when,
     location: event.location,
     hostName: event.host_name,
+    imageSrc,
   });
   const fromUser = process.env.GMAIL_USER!;
   const message = {

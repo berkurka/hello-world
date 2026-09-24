@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { hostClaimUrl, rsvpUrl } from "@/lib/app-url";
 import {
+  deleteEventImage,
   emailsUsedOnEvent,
   getEvent,
   getEventForOrganizer,
@@ -12,6 +13,7 @@ import {
   insertInvitee,
   listInvitees,
   run,
+  saveEventImage,
 } from "@/lib/db";
 import { asBool, asCount, isEmail, normalizeStoredEmail } from "@/lib/format";
 import { familyInviteNotice, unsentBatchNotice } from "@/lib/invite-delivery";
@@ -22,6 +24,7 @@ import {
   parseInviteeCsv,
   summarizeInviteeImport,
 } from "@/lib/invitee-csv";
+import { inspectPartyImage } from "@/lib/party-image";
 import { mailConfigured, sendHostClaimEmail, sendInviteEmail } from "@/lib/mail";
 
 function required(formData: FormData, key: string) {
@@ -40,32 +43,28 @@ async function requireOrganizer(formData: FormData) {
   return event;
 }
 
-function fieldErrorPath(formData: FormData, message: string) {
-  const eventId = required(formData, "eventId");
-  const token = required(formData, "t");
-  if (eventId && token) {
-    return `/e/${eventId}/manage?t=${encodeURIComponent(token)}&error=${encodeURIComponent(message)}`;
-  }
-  const params = new URLSearchParams();
-  params.set("error", message);
-  params.set("draft", "1");
-  for (const key of ["title", "location", "hostName", "hostEmail", "startsDate", "startsTime"] as const) {
-    const value = required(formData, key);
-    if (value) params.set(key, value);
-  }
-  if (asBool(formData.get("askComment"))) params.set("askComment", "1");
-  if (asBool(formData.get("askAdults"))) params.set("askAdults", "1");
-  if (asBool(formData.get("askKids"))) params.set("askKids", "1");
-  if (asBool(formData.get("askInfants"))) params.set("askInfants", "1");
-  return `/?${params.toString()}`;
-}
-
 function firstMatch(formData: FormData, key: string, re: RegExp) {
   for (const value of formData.getAll(key)) {
     const text = String(value).trim();
     if (re.test(text)) return text;
   }
   return "";
+}
+
+type PartyImageInput =
+  | { kind: "none" }
+  | { kind: "remove" }
+  | { kind: "file"; mime: string; data: string }
+  | { kind: "error"; error: string };
+
+async function readPartyImageInput(formData: FormData): Promise<PartyImageInput> {
+  if (asBool(formData.get("removePartyImage"))) return { kind: "remove" };
+  const file = formData.get("partyImage");
+  if (!(file instanceof File) || file.size === 0) return { kind: "none" };
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const inspected = inspectPartyImage(bytes, file.type, file.size);
+  if (!inspected.ok) return { kind: "error", error: inspected.error };
+  return { kind: "file", mime: inspected.mime, data: Buffer.from(bytes).toString("base64") };
 }
 
 function eventFields(formData: FormData) {
@@ -92,27 +91,25 @@ export async function createEvent(formData: FormData) {
   const fields = eventFields(formData);
   const hostEmail = required(formData, "hostEmail").toLowerCase();
   if (!fields.title) {
-    const dest = fieldErrorPath(formData, "Title is required.");
-    redirect(dest);
+    return { error: "Title is required." };
   }
   if (!fields.startsAt) {
-    const dest = fieldErrorPath(formData, "Date and time are required.");
-    redirect(dest);
+    return { error: "Date and time are required." };
   }
   if (!fields.hostName) {
-    const dest = fieldErrorPath(formData, "Host name is required.");
-    redirect(dest);
+    return { error: "Host name is required." };
   }
   if (!isEmail(hostEmail)) {
-    const dest = fieldErrorPath(formData, "Host email is required.");
-    redirect(dest);
+    return { error: "Host email is required." };
   }
+  const image = await readPartyImageInput(formData);
+  if (image.kind === "error") return { error: image.error };
   const id = newId();
   const adminToken = newToken();
   const hostClaimToken = newToken();
   await run(
-    `INSERT INTO events (id, admin_token, title, starts_at, location, host_name, host_email, host_claim_token, host_claimed_at, ask_comment, ask_adults, ask_kids, ask_infants, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
+    `INSERT INTO events (id, admin_token, title, starts_at, location, host_name, host_email, host_claim_token, host_claimed_at, ask_comment, ask_adults, ask_kids, ask_infants, party_image_mime, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL, ?)`,
     [
       id,
       adminToken,
@@ -129,6 +126,9 @@ export async function createEvent(formData: FormData) {
       new Date().toISOString(),
     ],
   );
+  if (image.kind === "file") {
+    await saveEventImage(id, image.mime, image.data);
+  }
 
   let mail: "sent" | "skipped" | "failed" = "skipped";
   if (mailConfigured()) {
@@ -148,6 +148,7 @@ export async function createEvent(formData: FormData) {
           ask_adults: fields.askAdults,
           ask_kids: fields.askKids,
           ask_infants: fields.askInfants,
+          party_image_mime: image.kind === "file" ? image.mime : null,
           created_at: new Date().toISOString(),
         },
         hostEmail,
@@ -166,14 +167,16 @@ export async function updateEvent(formData: FormData) {
   const event = await requireOrganizer(formData);
   const fields = eventFields(formData);
   if (!fields.title) {
-    redirect(fieldErrorPath(formData, "Title is required."));
+    return { error: "Title is required." };
   }
   if (!fields.startsAt) {
-    redirect(fieldErrorPath(formData, "Date and time are required."));
+    return { error: "Date and time are required." };
   }
   if (!fields.hostName) {
-    redirect(fieldErrorPath(formData, "Host name is required."));
+    return { error: "Host name is required." };
   }
+  const image = await readPartyImageInput(formData);
+  if (image.kind === "error") return { error: image.error };
   await run(
     `UPDATE events SET title = ?, starts_at = ?, location = ?, host_name = ?, ask_comment = ?, ask_adults = ?, ask_kids = ?, ask_infants = ?
      WHERE id = ?`,
@@ -189,6 +192,11 @@ export async function updateEvent(formData: FormData) {
       event.id,
     ],
   );
+  if (image.kind === "file") {
+    await saveEventImage(event.id, image.mime, image.data);
+  } else if (image.kind === "remove") {
+    await deleteEventImage(event.id);
+  }
   revalidatePath(`/e/${event.id}/manage`);
   redirect(`/e/${event.id}/manage?t=${event.admin_token}&notice=` + encodeURIComponent("Event updated."));
 }
