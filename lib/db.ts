@@ -4,7 +4,7 @@ import { createClient, type Client } from "@libsql/client";
 import { isEphemeralDb } from "./db-env";
 import { claimTokenIsOpen } from "./host-claim";
 import { newId, newToken } from "./ids";
-import type { EventRow, InviteeRow, InviteeWithRsvp, RsvpRow } from "./types";
+import type { EventRow, EventImageRow, InviteeRow, InviteeWithRsvp, RsvpRow } from "./types";
 
 export { isEphemeralDb };
 
@@ -61,6 +61,7 @@ async function ensureSchema() {
       ask_adults INTEGER NOT NULL DEFAULT 1,
       ask_kids INTEGER NOT NULL DEFAULT 0,
       ask_infants INTEGER NOT NULL DEFAULT 0,
+      party_image_mime TEXT,
       created_at TEXT NOT NULL
     )`,
     `CREATE TABLE IF NOT EXISTS invitees (
@@ -84,6 +85,13 @@ async function ensureSchema() {
       updated_at TEXT NOT NULL,
       FOREIGN KEY (invitee_id) REFERENCES invitees(id)
     )`,
+    `CREATE TABLE IF NOT EXISTS event_images (
+      event_id TEXT PRIMARY KEY,
+      mime TEXT NOT NULL,
+      data TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (event_id) REFERENCES events(id)
+    )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS invitees_event_email ON invitees(event_id, email)`,
     `CREATE INDEX IF NOT EXISTS invitees_event ON invitees(event_id)`,
   ];
@@ -94,6 +102,7 @@ async function ensureSchema() {
   await addColumnIfMissing("events", "host_email", "TEXT");
   await addColumnIfMissing("events", "host_claim_token", "TEXT");
   await addColumnIfMissing("events", "host_claimed_at", "TEXT");
+  await addColumnIfMissing("events", "party_image_mime", "TEXT");
   await db.execute(
     `CREATE UNIQUE INDEX IF NOT EXISTS events_host_claim_token ON events(host_claim_token) WHERE host_claim_token IS NOT NULL`,
   );
@@ -171,6 +180,38 @@ export function listInvitees(eventId: string) {
      ORDER BY i.created_at ASC`,
     [eventId],
   );
+}
+
+export function getEventImage(eventId: string) {
+  return queryOne<EventImageRow>(
+    `SELECT event_id, mime, data, updated_at FROM event_images WHERE event_id = ?`,
+    [eventId],
+  );
+}
+
+export async function getEventImageDataUrl(eventId: string) {
+  const image = await getEventImage(eventId);
+  if (!image) return null;
+  return `data:${image.mime};base64,${image.data}`;
+}
+
+export async function saveEventImage(eventId: string, mime: string, data: string) {
+  const now = new Date().toISOString();
+  await run(
+    `INSERT INTO event_images (event_id, mime, data, updated_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(event_id) DO UPDATE SET
+       mime = excluded.mime,
+       data = excluded.data,
+       updated_at = excluded.updated_at`,
+    [eventId, mime, data, now],
+  );
+  await run(`UPDATE events SET party_image_mime = ? WHERE id = ?`, [mime, eventId]);
+}
+
+export async function deleteEventImage(eventId: string) {
+  await run(`DELETE FROM event_images WHERE event_id = ?`, [eventId]);
+  await run(`UPDATE events SET party_image_mime = NULL WHERE id = ?`, [eventId]);
 }
 
 export function insertInvitee(eventId: string, email: string, displayName: string) {
