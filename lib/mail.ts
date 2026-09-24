@@ -40,9 +40,17 @@ export async function sendInviteEmail(opts: {
     hostName: event.host_name,
   });
   const fromUser = process.env.GMAIL_USER!;
+  const to = [
+    ...new Set(
+      [invitee.email, invitee.email2].flatMap((value) => {
+        const email = value?.trim();
+        return email ? [email] : [];
+      }),
+    ),
+  ];
   await transporter().sendMail({
     from: `"${fromName().replace(/"/g, "")}" <${fromUser}>`,
-    to: invitee.email,
+    to,
     subject: `You're invited: ${event.title}`,
     text: [
       `Hi ${invitee.display_name},`,

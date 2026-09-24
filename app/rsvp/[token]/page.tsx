@@ -1,9 +1,7 @@
 import { Flash } from "@/app/components/flash";
-import { RsvpForm } from "@/app/components/rsvp-form";
+import { RsvpResponse } from "@/app/components/rsvp-response";
 import { getEvent, getInviteeByToken, getRsvp } from "@/lib/db";
 import { formatWhen } from "@/lib/format";
-import { attendingLabel } from "@/lib/format";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -13,16 +11,15 @@ export default async function RsvpPage({
   searchParams,
 }: {
   params: Promise<{ token: string }>;
-  searchParams: Promise<{ done?: string; error?: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const { token } = await params;
-  const { done, error } = await searchParams;
+  const { error } = await searchParams;
   const invitee = await getInviteeByToken(token);
   if (!invitee) notFound();
   const event = await getEvent(invitee.event_id);
   if (!event) notFound();
   const rsvp = await getRsvp(invitee.id);
-  const confirmed = done === "1" && rsvp;
 
   return (
     <main className="wrap">
@@ -42,24 +39,13 @@ export default async function RsvpPage({
           </p>
         </div>
         <Flash error={error} />
-        {confirmed ? (
-          <div>
-            <h2>Thanks, {invitee.display_name}.</h2>
-            <p className="lede">Your RSVP is saved.</p>
-            <p style={{ marginTop: "0.75rem" }}>
-              Response: <strong>{attendingLabel(rsvp.attending)}</strong>
-              {event.ask_adults && rsvp.attending === 1 ? ` · Adults: ${rsvp.adults}` : ""}
-              {event.ask_kids && rsvp.attending === 1 ? ` · Kids: ${rsvp.kids}` : ""}
-              {event.ask_infants && rsvp.attending === 1 ? ` · Under 12 months: ${rsvp.infants}` : ""}
-            </p>
-            {event.ask_comment && rsvp.comment ? <p>Comment: {rsvp.comment}</p> : null}
-            <p style={{ marginTop: "1rem" }}>
-              <Link href={`/rsvp/${token}`}>Change my RSVP</Link>
-            </p>
-          </div>
-        ) : (
-          <RsvpForm token={token} event={event} invitee={invitee} rsvp={rsvp} />
-        )}
+        <RsvpResponse
+          token={token}
+          event={event}
+          invitee={invitee}
+          rsvp={rsvp}
+          openForm={Boolean(error)}
+        />
       </div>
     </main>
   );

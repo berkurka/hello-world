@@ -67,6 +67,7 @@ async function ensureSchema() {
       id TEXT PRIMARY KEY,
       event_id TEXT NOT NULL,
       email TEXT NOT NULL,
+      email2 TEXT,
       display_name TEXT NOT NULL,
       token TEXT NOT NULL UNIQUE,
       invited_at TEXT,
@@ -94,6 +95,8 @@ async function ensureSchema() {
   await addColumnIfMissing("events", "host_email", "TEXT");
   await addColumnIfMissing("events", "host_claim_token", "TEXT");
   await addColumnIfMissing("events", "host_claimed_at", "TEXT");
+  // Existing invitee rows were created without a second address.
+  await addColumnIfMissing("invitees", "email2", "TEXT");
   await db.execute(
     `CREATE UNIQUE INDEX IF NOT EXISTS events_host_claim_token ON events(host_claim_token) WHERE host_claim_token IS NOT NULL`,
   );
@@ -173,10 +176,15 @@ export function listInvitees(eventId: string) {
   );
 }
 
-export function insertInvitee(eventId: string, email: string, displayName: string) {
+export function insertInvitee(
+  eventId: string,
+  email: string,
+  displayName: string,
+  email2: string | null = null,
+) {
   return run(
-    `INSERT INTO invitees (id, event_id, email, display_name, token, invited_at, created_at)
-     VALUES (?, ?, ?, ?, ?, NULL, ?)`,
-    [newId(), eventId, email, displayName, newToken(), new Date().toISOString()],
+    `INSERT INTO invitees (id, event_id, email, email2, display_name, token, invited_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, NULL, ?)`,
+    [newId(), eventId, email, email2, displayName, newToken(), new Date().toISOString()],
   );
 }

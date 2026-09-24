@@ -51,8 +51,8 @@ Vercel serverless has no persistent disk. Without Turso env vars the app still s
 1. **Create a party** on the home page: title, date/time, location or notes, host name, and **host email**. Toggle which RSVP fields invitees will see (comment, adults, kids, kids under 12 months). Yes/no is always shown. There is no password or login wall.
 2. **Check email / save the dashboard URL.** After create, the app tries to email a claim link if Gmail is configured. The success page always shows the manage URL (`/e/…/manage?t=…`) once, copyable, in case email is missing or delayed.
 3. **Open the dashboard** from the email (`/host/claim?token=…`) or from the saved manage URL. `manage?t=` remains the organizer key.
-4. **Add invitees** by display name + email, or import a CSV with `display_name` and `email` columns (download a template from the manage page). Each person gets a unique RSVP link. Copy that link to share (email sending is optional).
-5. **Invitees open the link** (no login): yes/no, optional comment, and only the count fields you enabled. Saving shows a confirmation. They can change the response later.
+4. **Add invitees** by family or guest name and email. A second email is optional: both addresses get the same RSVP link, and either person can answer for the family. Or import a CSV with `name`, `email`, and optional `email2` (download a template from the manage page). Copy the link to share (email sending is optional).
+5. **Invitees open the link** (no login): yes/no, optional comment, and only the count fields you enabled. If this family already answered, that RSVP is shown first, with a way to change it. The latest save wins.
 6. **Organizer view** on the manage page lists RSVPs and totals for yes/no/pending and enabled count fields.
 
 ## Host claim tokens
@@ -65,7 +65,7 @@ Each new party stores `host_email`, a unique `host_claim_token`, and `host_claim
 - A bad or expired token shows a plain not-found message.
 - Guest RSVP tokens and `manage?t=` auth are unchanged.
 
-Existing databases get the new columns on startup: the app runs `ALTER TABLE events ADD COLUMN …` and ignores “already exists” errors so this works on local SQLite and Turso.
+Existing databases get the new columns on startup: the app runs `ALTER TABLE events ADD COLUMN …` and `ALTER TABLE invitees ADD COLUMN email2 TEXT`, and ignores “already exists” errors so this works on local SQLite and Turso. `display_name` stays the family or guest label. One invitee row is still one token and one RSVP.
 
 ## Scripts
 

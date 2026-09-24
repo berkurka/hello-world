@@ -16,6 +16,7 @@ import { asBool, asCount, isEmail } from "@/lib/format";
 import { newId, newToken } from "@/lib/ids";
 import {
   applyExistingEmails,
+  emailsInUse,
   INVITEE_CSV_MAX_BYTES,
   parseInviteeCsv,
   summarizeInviteeImport,
@@ -205,14 +206,27 @@ function managePath(
 export async function addInvitee(formData: FormData) {
   const event = await requireOrganizer(formData);
   const email = required(formData, "email").toLowerCase();
+  const email2Raw = required(formData, "email2").toLowerCase();
+  const email2 = email2Raw || null;
   const displayName = required(formData, "displayName");
   if (!displayName || !isEmail(email)) {
-    redirect(managePath(event, { error: "Need a display name and a valid email." }));
+    redirect(managePath(event, { error: "Need a family or guest name and a valid email." }));
+  }
+  if (email2 && !isEmail(email2)) {
+    redirect(managePath(event, { error: "Second email is not valid." }));
+  }
+  if (email2 && email2 === email) {
+    redirect(managePath(event, { error: "The two emails are the same." }));
+  }
+  const existing = await listInvitees(event.id);
+  const taken = emailsInUse(existing.flatMap((row) => [row.email, row.email2]));
+  if (taken.has(email) || (email2 && taken.has(email2))) {
+    redirect(managePath(event, { error: "That email is already used on this event." }));
   }
   try {
-    await insertInvitee(event.id, email, displayName);
+    await insertInvitee(event.id, email, displayName, email2);
   } catch {
-    redirect(managePath(event, { error: "That email is already on this event." }));
+    redirect(managePath(event, { error: "That email is already used on this event." }));
   }
   revalidatePath(`/e/${event.id}/manage`);
   redirect(managePath(event, { notice: "Invitee added." }));
@@ -231,12 +245,12 @@ export async function importInvitees(formData: FormData) {
   const existing = await listInvitees(event.id);
   const plan = applyExistingEmails(
     parseInviteeCsv(text),
-    existing.map((row) => row.email),
+    existing.flatMap((row) => [row.email, row.email2]),
   );
   let added = 0;
   for (const row of plan.toAdd) {
     try {
-      await insertInvitee(event.id, row.email, row.displayName);
+      await insertInvitee(event.id, row.email, row.displayName, row.email2);
       added += 1;
     } catch {
       plan.skips.push({ line: row.line, reason: "already on this event" });
@@ -274,6 +288,8 @@ async function sendOne(eventId: string, inviteeId: string) {
 export async function sendInvite(formData: FormData) {
   const event = await requireOrganizer(formData);
   const inviteeId = required(formData, "inviteeId");
+  const invitees = await listInvitees(event.id);
+  const invitee = invitees.find((row) => row.id === inviteeId);
   try {
     await sendOne(event.id, inviteeId);
   } catch (err) {
@@ -281,7 +297,8 @@ export async function sendInvite(formData: FormData) {
     redirect(`/e/${event.id}/manage?t=${event.admin_token}&error=` + encodeURIComponent(message));
   }
   revalidatePath(`/e/${event.id}/manage`);
-  redirect(`/e/${event.id}/manage?t=${event.admin_token}&notice=` + encodeURIComponent("Invite sent."));
+  const notice = invitee?.email2 ? "Invite sent to both emails." : "Invite sent.";
+  redirect(`/e/${event.id}/manage?t=${event.admin_token}&notice=` + encodeURIComponent(notice));
 }
 
 export async function sendAllUnsent(formData: FormData) {
