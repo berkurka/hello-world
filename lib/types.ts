@@ -27,6 +27,7 @@ export type InviteeRow = {
   id: string;
   event_id: string;
   email: string;
+  email2: string | null;
   display_name: string;
   token: string;
   invited_at: string | null;

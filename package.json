@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "tsx --test lib/invitee-csv.test.ts lib/party-image.test.ts"
+    "test": "tsx --test lib/*.test.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",

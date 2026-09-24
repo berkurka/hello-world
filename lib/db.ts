@@ -2,6 +2,7 @@ import { mkdirSync } from "fs";
 import { join } from "path";
 import { createClient, type Client } from "@libsql/client";
 import { isEphemeralDb } from "./db-env";
+import { normalizeStoredEmail } from "./format";
 import { claimTokenIsOpen } from "./host-claim";
 import { newId, newToken } from "./ids";
 import type { EventRow, EventImageRow, InviteeRow, InviteeWithRsvp, RsvpRow } from "./types";
@@ -35,10 +36,17 @@ function isAlreadyExistsError(err: unknown) {
   return /duplicate column name/i.test(message) || /already exists/i.test(message);
 }
 
-async function addColumnIfMissing(table: string, column: string, definition: string) {
+async function tableColumns(table: string) {
   const db = getDb();
+  const rs = await db.execute(`PRAGMA table_info(${table})`);
+  return new Set(rs.rows.map((row) => String(row.name)));
+}
+
+async function addColumnIfMissing(table: string, column: string, definition: string) {
+  const columns = await tableColumns(table);
+  if (columns.has(column)) return;
   try {
-    await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    await getDb().execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   } catch (err) {
     if (!isAlreadyExistsError(err)) throw err;
   }
@@ -68,6 +76,7 @@ async function ensureSchema() {
       id TEXT PRIMARY KEY,
       event_id TEXT NOT NULL,
       email TEXT NOT NULL,
+      email2 TEXT,
       display_name TEXT NOT NULL,
       token TEXT NOT NULL UNIQUE,
       invited_at TEXT,
@@ -98,10 +107,11 @@ async function ensureSchema() {
   for (const sql of statements) {
     await db.execute(sql);
   }
-  // Existing DBs were created without host_* columns; CREATE IF NOT EXISTS is a no-op there.
+  // CREATE TABLE IF NOT EXISTS does not add columns on a database that already exists.
   await addColumnIfMissing("events", "host_email", "TEXT");
   await addColumnIfMissing("events", "host_claim_token", "TEXT");
   await addColumnIfMissing("events", "host_claimed_at", "TEXT");
+  await addColumnIfMissing("invitees", "email2", "TEXT");
   await addColumnIfMissing("events", "party_image_mime", "TEXT");
   await db.execute(
     `CREATE UNIQUE INDEX IF NOT EXISTS events_host_claim_token ON events(host_claim_token) WHERE host_claim_token IS NOT NULL`,
@@ -182,6 +192,21 @@ export function listInvitees(eventId: string) {
   );
 }
 
+export async function emailsUsedOnEvent(eventId: string) {
+  const rows = await query<{ email: string; email2: string | null }>(
+    `SELECT email, email2 FROM invitees WHERE event_id = ?`,
+    [eventId],
+  );
+  const used = new Set<string>();
+  for (const row of rows) {
+    const email = normalizeStoredEmail(row.email);
+    const email2 = normalizeStoredEmail(row.email2);
+    if (email) used.add(email);
+    if (email2) used.add(email2);
+  }
+  return used;
+}
+
 export function getEventImage(eventId: string) {
   return queryOne<EventImageRow>(
     `SELECT event_id, mime, data, updated_at FROM event_images WHERE event_id = ?`,
@@ -214,10 +239,25 @@ export async function deleteEventImage(eventId: string) {
   await run(`UPDATE events SET party_image_mime = NULL WHERE id = ?`, [eventId]);
 }
 
-export function insertInvitee(eventId: string, email: string, displayName: string) {
+export function insertInvitee(
+  eventId: string,
+  email: string,
+  displayName: string,
+  email2: string | null = null,
+) {
+  const storedEmail = normalizeStoredEmail(email);
+  if (!storedEmail) throw new Error("Email is required.");
   return run(
-    `INSERT INTO invitees (id, event_id, email, display_name, token, invited_at, created_at)
-     VALUES (?, ?, ?, ?, ?, NULL, ?)`,
-    [newId(), eventId, email, displayName, newToken(), new Date().toISOString()],
+    `INSERT INTO invitees (id, event_id, email, email2, display_name, token, invited_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, NULL, ?)`,
+    [
+      newId(),
+      eventId,
+      storedEmail,
+      normalizeStoredEmail(email2),
+      displayName,
+      newToken(),
+      new Date().toISOString(),
+    ],
   );
 }

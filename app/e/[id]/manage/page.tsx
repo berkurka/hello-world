@@ -26,6 +26,12 @@ export default async function ManageEventPage({
   const invitees = await listInvitees(event.id);
   const canEmail = mailConfigured();
 
+  const columnCount =
+    4 +
+    (event.ask_adults ? 1 : 0) +
+    (event.ask_kids ? 1 : 0) +
+    (event.ask_infants ? 1 : 0) +
+    (event.ask_comment ? 1 : 0);
   const yes = invitees.filter((row) => row.attending === 1);
   const no = invitees.filter((row) => row.attending === 0);
   const pending = invitees.filter((row) => row.attending === null);
@@ -100,13 +106,21 @@ export default async function ManageEventPage({
             <tbody>
               {invitees.length === 0 ? (
                 <tr>
-                  <td colSpan={8}>No invitees yet.</td>
+                  <td colSpan={columnCount}>No invitees yet.</td>
                 </tr>
               ) : (
                 invitees.map((row) => (
                   <tr key={row.id}>
                     <td>{row.display_name}</td>
-                    <td>{row.email}</td>
+                    <td>
+                      {row.email}
+                      {row.email2 ? (
+                        <>
+                          <br />
+                          {row.email2}
+                        </>
+                      ) : null}
+                    </td>
                     <td>{attendingLabel(row.attending)}</td>
                     {event.ask_adults ? <td>{row.attending === 1 ? row.adults : "—"}</td> : null}
                     {event.ask_kids ? <td>{row.attending === 1 ? row.kids : "—"}</td> : null}
@@ -145,12 +159,17 @@ export default async function ManageEventPage({
             <input type="hidden" name="eventId" value={event.id} />
             <input type="hidden" name="t" value={t} />
             <label className="field">
-              <span>Display name</span>
-              <input name="displayName" required placeholder="Sam" />
+              <span>Family or guest name</span>
+              <input name="displayName" required placeholder="The Rivera family" />
             </label>
             <label className="field">
               <span>Email</span>
-              <input name="email" type="email" required placeholder="sam@example.com" />
+              <input name="email" type="email" required placeholder="alex@example.com" />
+            </label>
+            <label className="field">
+              <span>Second email</span>
+              <input name="email2" type="email" placeholder="sam@example.com" />
+              <span className="hint">Optional. Both addresses get the same RSVP link.</span>
             </label>
             <div className="actions">
               <button className="btn" type="submit">
@@ -161,8 +180,8 @@ export default async function ManageEventPage({
           <div className="import-box">
             <h3>Import CSV</h3>
             <p className="hint">
-              Download a template, fill in display name and email, then upload. Bad rows are
-              skipped; valid ones still import.
+              Download a template with name, email, and an optional second email. One row is
+              one family. Bad rows are skipped; valid ones still import.
             </p>
             <p className="actions" style={{ marginTop: "0.75rem" }}>
               <a className="btn ghost" href={`/${INVITEE_CSV_FILENAME}`} download={INVITEE_CSV_FILENAME}>

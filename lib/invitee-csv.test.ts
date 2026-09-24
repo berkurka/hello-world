@@ -9,9 +9,9 @@ import {
 
 test("template uses invitee columns and fake placeholder rows", () => {
   const csv = inviteeCsvTemplate();
-  assert.match(csv, /^display_name,email\n/);
-  assert.match(csv, /Alex Example,alex@example.com/);
-  assert.match(csv, /Jordan Guest,jordan@example.com/);
+  assert.match(csv, /^name,email,email2\n/);
+  assert.match(csv, /The Example Family,alex@example.com,jordan@example.com/);
+  assert.match(csv, /Sam Guest,sam@example.com,/);
   assert.doesNotMatch(csv, /@gmail\.com/);
   assert.doesNotMatch(csv, /host_claim_token|TURSO|GMAIL|RESEND|\?t=/);
 });
@@ -20,10 +20,10 @@ test("parses the template into two invitees", () => {
   const plan = parseInviteeCsv(inviteeCsvTemplate());
   assert.equal(plan.skips.length, 0);
   assert.deepEqual(
-    plan.toAdd.map((row) => [row.displayName, row.email]),
+    plan.toAdd.map((row) => [row.displayName, row.email, row.email2]),
     [
-      ["Alex Example", "alex@example.com"],
-      ["Jordan Guest", "jordan@example.com"],
+      ["The Example Family", "alex@example.com", "jordan@example.com"],
+      ["Sam Guest", "sam@example.com", null],
     ],
   );
 });
@@ -35,6 +35,7 @@ test("accepts displayName / Email headers and quoted names", () => {
   assert.equal(plan.skips.length, 0);
   assert.equal(plan.toAdd[0]?.displayName, "Example, Alex");
   assert.equal(plan.toAdd[0]?.email, "alex@example.com");
+  assert.equal(plan.toAdd[0]?.email2, null);
   assert.equal(plan.toAdd[1]?.displayName, "Sam Guest");
 });
 
@@ -73,6 +74,66 @@ test("skips emails already on the event", () => {
     ["new@example.com"],
   );
   assert.deepEqual(plan.skips, [{ line: 2, reason: "already on this event" }]);
+});
+
+test("skips a bad email, a duplicate, or the same address in both fields", () => {
+  const plan = parseInviteeCsv(
+    [
+      "name,email,email2",
+      "Good Family,good@example.com,second@example.com",
+      "Bad Email,not-an-email,",
+      "Same Person,same@example.com,SAME@example.com",
+      "Dup primary,good@example.com,",
+      "Dup second,other@example.com,Second@example.com",
+      "Second bad,ok2@example.com,not-email",
+      "Only one,solo@example.com,",
+    ].join("\n"),
+  );
+  assert.deepEqual(
+    plan.toAdd.map((row) => [row.displayName, row.email, row.email2]),
+    [
+      ["Good Family", "good@example.com", "second@example.com"],
+      ["Only one", "solo@example.com", null],
+    ],
+  );
+  assert.deepEqual(
+    plan.skips.map((skip) => [skip.line, skip.reason]),
+    [
+      [3, "invalid email"],
+      [4, "same email in both fields"],
+      [5, "duplicate email in this file"],
+      [6, "duplicate email in this file"],
+      [7, "invalid second email"],
+    ],
+  );
+});
+
+test("treats either column as already used on the event", () => {
+  const parsed = parseInviteeCsv(
+    [
+      "name,email,email2",
+      "Taken primary,alex@example.com,pat@example.com",
+      "Taken second,new@example.com,JORDAN@example.com",
+      "Fresh Family,fresh@example.com,extra@example.com",
+    ].join("\n"),
+  );
+  const plan = applyExistingEmails(parsed, ["Alex@example.com", "jordan@example.com"]);
+  assert.deepEqual(
+    plan.toAdd.map((row) => [row.email, row.email2]),
+    [["fresh@example.com", "extra@example.com"]],
+  );
+  assert.deepEqual(plan.skips, [
+    { line: 2, reason: "already on this event" },
+    { line: 3, reason: "already on this event" },
+  ]);
+});
+
+test("accepts a Second email header", () => {
+  const plan = parseInviteeCsv(
+    "Name,Email,Second email\nThe Example Family,alex@example.com,sam@example.com\n",
+  );
+  assert.equal(plan.skips.length, 0);
+  assert.equal(plan.toAdd[0]?.email2, "sam@example.com");
 });
 
 test("summarizes mixed imports without failing silently", () => {
