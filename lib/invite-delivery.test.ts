@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { normalizeStoredEmail } from "./format";
-import { familyInviteNotice, inviteRecipients, unsentBatchNotice } from "./invite-delivery";
+import {
+  appendSendError,
+  familyInviteNotice,
+  inviteRecipients,
+  unsentBatchNotice,
+} from "./invite-delivery";
 
 test("stores a second email trimmed and lowercased, and keeps a blank one empty", () => {
   assert.equal(normalizeStoredEmail("  Sam@Example.com "), "sam@example.com");
@@ -34,4 +39,18 @@ test("a partial send names the address that failed", () => {
     "Sent 2 invites. Could not email sam@example.com.",
   );
   assert.equal(unsentBatchNotice(1, []), "Sent 1 invite.");
+});
+
+test("a failed send keeps the provider error on the existing notice", () => {
+  const notice = familyInviteNotice(["alex@example.com"], ["sam@example.com"]);
+  const detail = "You can only send testing emails to your own email address";
+  assert.equal(
+    appendSendError(notice, detail),
+    "Invite sent. Could not email sam@example.com. You can only send testing emails to your own email address",
+  );
+  assert.equal(appendSendError(notice, "  "), notice);
+  assert.equal(
+    appendSendError(unsentBatchNotice(2, ["sam@example.com"]), detail),
+    `Sent 2 invites. Could not email sam@example.com. ${detail}`,
+  );
 });

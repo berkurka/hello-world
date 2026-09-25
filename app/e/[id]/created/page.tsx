@@ -12,10 +12,10 @@ export default async function PartyCreatedPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ t?: string; mail?: string }>;
+  searchParams: Promise<{ t?: string; mail?: string; mailError?: string }>;
 }) {
   const { id } = await params;
-  const { t, mail } = await searchParams;
+  const { t, mail, mailError } = await searchParams;
   if (!t) notFound();
   const event = await getEventForOrganizer(id, t);
   if (!event) notFound();
@@ -42,6 +42,7 @@ export default async function PartyCreatedPage({
           <p className="flash error">
             The party was created, but we could not send email. Copy the dashboard link below and
             keep it.
+            {mailError ? ` ${mailError}` : ""}
           </p>
         ) : (
           <p className="flash notice">

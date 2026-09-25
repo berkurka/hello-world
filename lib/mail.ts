@@ -1,30 +1,104 @@
-import nodemailer from "nodemailer";
+import nodemailer, { type Transporter } from "nodemailer";
 import { getEventImageDataUrl } from "./db";
 import { inviteCardPng } from "./invite-card";
 import { formatWhen } from "./format";
 import { inviteRecipients, type InviteDelivery } from "./invite-delivery";
 import type { EventRow, InviteeRow } from "./types";
 
-export function mailConfigured() {
-  return Boolean(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
+export type MailConfig = {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  pass: string;
+  from: string;
+};
+
+function trimmed(value: string | undefined) {
+  return value?.trim() ?? "";
 }
 
-function fromName() {
-  return process.env.FROM_NAME?.trim() || "Partyz";
+function smtpPort(value: string | undefined) {
+  const raw = trimmed(value);
+  if (!raw) return 465;
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return 465;
+  return port;
 }
+
+/** Generic SMTP when the full set is present; otherwise legacy Gmail. */
+export function mailConfigFrom(env: NodeJS.ProcessEnv = process.env): MailConfig | null {
+  const host = trimmed(env.SMTP_HOST);
+  const user = trimmed(env.SMTP_USER);
+  const pass = trimmed(env.SMTP_PASS);
+  const from = trimmed(env.MAIL_FROM);
+  if (host && user && pass && from) {
+    const port = smtpPort(env.SMTP_PORT);
+    return { host, port, secure: port === 465, user, pass, from };
+  }
+  const gmailUser = trimmed(env.GMAIL_USER);
+  const gmailPass = trimmed(env.GMAIL_APP_PASSWORD);
+  if (gmailUser && gmailPass) {
+    return {
+      host: "smtp.gmail.com",
+      port: 465,
+      secure: true,
+      user: gmailUser,
+      pass: gmailPass,
+      from: gmailUser,
+    };
+  }
+  return null;
+}
+
+export function mailConfigured(env: NodeJS.ProcessEnv = process.env) {
+  return mailConfigFrom(env) !== null;
+}
+
+export function mailFromHeader(env: NodeJS.ProcessEnv = process.env) {
+  const config = mailConfigFrom(env);
+  if (!config) return null;
+  const name = (env.FROM_NAME?.trim() || "Partyz").replace(/"/g, "");
+  return `"${name}" <${config.from}>`;
+}
+
+export function providerErrorMessage(err: unknown) {
+  let text = "Send failed.";
+  if (err && typeof err === "object") {
+    const response = (err as { response?: unknown }).response;
+    const message = (err as { message?: unknown }).message;
+    if (typeof response === "string" && response.trim()) text = response.trim();
+    else if (typeof message === "string" && message.trim()) text = message.trim();
+  } else if (typeof err === "string" && err.trim()) {
+    text = err.trim();
+  }
+  const collapsed = text.replace(/\s+/g, " ").trim();
+  return collapsed.length > 500 ? `${collapsed.slice(0, 499)}…` : collapsed;
+}
+
+const NOT_CONFIGURED =
+  "Email is not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASS, and MAIL_FROM.";
+
+function requireMailConfig() {
+  const config = mailConfigFrom();
+  if (!config) throw new Error(NOT_CONFIGURED);
+  return config;
+}
+
+let cached: { key: string; transport: Transporter } | null = null;
 
 function transporter() {
-  const user = process.env.GMAIL_USER;
-  const pass = process.env.GMAIL_APP_PASSWORD;
-  if (!user || !pass) {
-    throw new Error("Gmail is not configured. Set GMAIL_USER and GMAIL_APP_PASSWORD.");
-  }
-  return nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 465,
-    secure: true,
-    auth: { user, pass },
+  const config = requireMailConfig();
+  const key = [config.host, String(config.port), config.user, config.pass].join("\0");
+  if (cached?.key === key) return cached.transport;
+  const transport = nodemailer.createTransport({
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
+    auth: { user: config.user, pass: config.pass },
   });
+  cached = { key, transport };
+  return transport;
 }
 
 export async function sendInviteEmail(opts: {
@@ -47,9 +121,10 @@ export async function sendInviteEmail(opts: {
     hostName: event.host_name,
     imageSrc,
   });
-  const fromUser = process.env.GMAIL_USER!;
+  const from = mailFromHeader();
+  if (!from) throw new Error(NOT_CONFIGURED);
   const message = {
-    from: `"${fromName().replace(/"/g, "")}" <${fromUser}>`,
+    from,
     subject: `You're invited: ${event.title}`,
     text: [
       `Hi ${invitee.display_name},`,
@@ -81,17 +156,21 @@ export async function sendInviteEmail(opts: {
       },
     ],
   };
+  const transport = transporter();
   const sent: string[] = [];
   const failed: string[] = [];
+  const errors: string[] = [];
   for (const email of recipients) {
     try {
-      await transporter().sendMail({ ...message, to: email });
+      await transport.sendMail({ ...message, to: email });
       sent.push(email);
-    } catch {
+    } catch (err) {
       failed.push(email);
+      const messageText = providerErrorMessage(err);
+      if (!errors.includes(messageText)) errors.push(messageText);
     }
   }
-  return { sent, failed };
+  return errors.length > 0 ? { sent, failed, error: errors.join(" ") } : { sent, failed };
 }
 
 export async function sendHostClaimEmail(opts: {
@@ -100,9 +179,10 @@ export async function sendHostClaimEmail(opts: {
   claimLink: string;
 }) {
   const { event, hostEmail, claimLink } = opts;
-  const fromUser = process.env.GMAIL_USER!;
+  const from = mailFromHeader();
+  if (!from) throw new Error(NOT_CONFIGURED);
   await transporter().sendMail({
-    from: `"${fromName().replace(/"/g, "")}" <${fromUser}>`,
+    from,
     to: hostEmail,
     subject: `Open your Partyz dashboard: ${event.title}`,
     text: [

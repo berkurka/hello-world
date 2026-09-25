@@ -1,7 +1,14 @@
 export type InviteDelivery = {
   sent: string[];
   failed: string[];
+  error?: string;
 };
+
+export function appendSendError(text: string, error?: string) {
+  const detail = error?.replace(/\s+/g, " ").trim();
+  if (!detail || text.includes(detail)) return text;
+  return `${text} ${detail}`;
+}
 
 export function inviteRecipients(invitee: { email: string; email2?: string | null }) {
   const recipients: string[] = [];
