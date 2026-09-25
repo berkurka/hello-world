@@ -16,7 +16,7 @@ import {
   saveEventImage,
 } from "@/lib/db";
 import { asBool, asCount, isEmail, normalizeStoredEmail } from "@/lib/format";
-import { familyInviteNotice, unsentBatchNotice } from "@/lib/invite-delivery";
+import { appendSendError, familyInviteNotice, unsentBatchNotice } from "@/lib/invite-delivery";
 import { newId, newToken } from "@/lib/ids";
 import {
   applyExistingEmails,
@@ -25,7 +25,7 @@ import {
   summarizeInviteeImport,
 } from "@/lib/invitee-csv";
 import { inspectPartyImage } from "@/lib/party-image";
-import { mailConfigured, sendHostClaimEmail, sendInviteEmail } from "@/lib/mail";
+import { mailConfigured, providerErrorMessage, sendHostClaimEmail, sendInviteEmail } from "@/lib/mail";
 
 function required(formData: FormData, key: string) {
   for (const value of formData.getAll(key)) {
@@ -131,6 +131,7 @@ export async function createEvent(formData: FormData) {
   }
 
   let mail: "sent" | "skipped" | "failed" = "skipped";
+  let mailError = "";
   if (mailConfigured()) {
     try {
       await sendHostClaimEmail({
@@ -155,12 +156,15 @@ export async function createEvent(formData: FormData) {
         claimLink: hostClaimUrl(hostClaimToken),
       });
       mail = "sent";
-    } catch {
+    } catch (err) {
       mail = "failed";
+      mailError = providerErrorMessage(err);
     }
   }
 
-  redirect(`/e/${id}/created?t=${encodeURIComponent(adminToken)}&mail=${mail}`);
+  const created = new URLSearchParams({ t: adminToken, mail });
+  if (mailError) created.set("mailError", mailError);
+  redirect(`/e/${id}/created?${created.toString()}`);
 }
 
 export async function updateEvent(formData: FormData) {
@@ -275,7 +279,9 @@ async function deliverInvite(eventId: string, inviteeId: string) {
   const invitee = invitees.find((row) => row.id === inviteeId);
   if (!invitee) throw new Error("Invitee not found");
   if (!mailConfigured()) {
-    throw new Error("Email is not configured. Copy the RSVP link below, or set GMAIL_USER and GMAIL_APP_PASSWORD.");
+    throw new Error(
+      "Email is not configured. Copy the RSVP link below, or set SMTP_HOST, SMTP_USER, SMTP_PASS, and MAIL_FROM.",
+    );
   }
   const delivery = await sendInviteEmail({
     event,
@@ -304,11 +310,14 @@ export async function sendInvite(formData: FormData) {
   revalidatePath(`/e/${event.id}/manage`);
   if (delivery.sent.length === 0) {
     const who = delivery.failed.join(", ");
-    redirect(
-      managePath(event, { error: who ? `Could not email ${who}.` : "Could not send invite." }),
-    );
+    const base = who ? `Could not email ${who}.` : "Could not send invite.";
+    redirect(managePath(event, { error: appendSendError(base, delivery.error) }));
   }
-  redirect(managePath(event, { notice: familyInviteNotice(delivery.sent, delivery.failed) }));
+  redirect(
+    managePath(event, {
+      notice: appendSendError(familyInviteNotice(delivery.sent, delivery.failed), delivery.error),
+    }),
+  );
 }
 
 export async function sendAllUnsent(formData: FormData) {
@@ -320,27 +329,27 @@ export async function sendAllUnsent(formData: FormData) {
   }
   let sentFamilies = 0;
   const failed: string[] = [];
+  const errors: string[] = [];
   let stopped: string | null = null;
   for (const invitee of pending) {
     try {
       const delivery = await deliverInvite(event.id, invitee.id);
       if (delivery.sent.length > 0) sentFamilies += 1;
       failed.push(...delivery.failed);
+      if (delivery.error) errors.push(delivery.error);
     } catch (err) {
       stopped = err instanceof Error ? err.message : "Could not send invites.";
       break;
     }
   }
   revalidatePath(`/e/${event.id}/manage`);
+  const sendError = [...new Set(errors)].join(" ");
   if (sentFamilies === 0) {
     const who = failed.join(", ");
-    redirect(
-      managePath(event, {
-        error: stopped || (who ? `Could not email ${who}.` : "Could not send invites."),
-      }),
-    );
+    const base = stopped || (who ? `Could not email ${who}.` : "Could not send invites.");
+    redirect(managePath(event, { error: appendSendError(base, sendError) }));
   }
-  const notice = unsentBatchNotice(sentFamilies, failed);
+  const notice = appendSendError(unsentBatchNotice(sentFamilies, failed), sendError);
   redirect(managePath(event, { notice: stopped ? `${notice} ${stopped}` : notice }));
 }
 
