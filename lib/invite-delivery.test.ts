@@ -5,6 +5,7 @@ import {
   appendSendError,
   familyInviteNotice,
   inviteRecipients,
+  isFamilyInvite,
   unsentBatchNotice,
 } from "./invite-delivery";
 
@@ -12,6 +13,12 @@ test("stores a second email trimmed and lowercased, and keeps a blank one empty"
   assert.equal(normalizeStoredEmail("  Sam@Example.com "), "sam@example.com");
   assert.equal(normalizeStoredEmail("   "), null);
   assert.equal(normalizeStoredEmail(null), null);
+});
+
+test("a second email marks the invite as a family", () => {
+  assert.equal(isFamilyInvite({ email2: "sam@example.com" }), true);
+  assert.equal(isFamilyInvite({ email2: "  " }), false);
+  assert.equal(isFamilyInvite({ email2: null }), false);
 });
 
 test("invitees without a second email still have one recipient", () => {

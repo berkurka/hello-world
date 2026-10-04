@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { RsvpForm } from "@/app/components/rsvp-form";
-import { countSummary, weekdayName } from "@/lib/format";
+import { countSummary, familyRsvpHeading, weekdayName } from "@/lib/format";
+import { isFamilyInvite } from "@/lib/invite-delivery";
 import type { EventRow, InviteeRow, RsvpRow } from "@/lib/types";
 
 type Props = {
@@ -21,14 +22,14 @@ export function RsvpResponse({ token, event, invitee, rsvp, openForm, passed, al
     return (
       <div className="card stack confirm">
         <h2>This party was on {formatPassed(event.starts_at)}.</h2>
-        {rsvp ? <Answer event={event} hostName={event.host_name} rsvp={rsvp} /> : null}
+        {rsvp ? <Answer event={event} hostName={event.host_name} invitee={invitee} rsvp={rsvp} /> : null}
       </div>
     );
   }
   if (rsvp && !editing) {
     return (
       <div className="card stack confirm">
-        <Answer event={event} hostName={event.host_name} rsvp={rsvp} />
+        <Answer event={event} hostName={event.host_name} invitee={invitee} rsvp={rsvp} />
         <p>
           <button className="btn ghost" type="button" onClick={() => setEditing(true)}>
             Change response
@@ -53,14 +54,25 @@ function formatPassed(startsAt: string) {
 function Answer({
   event,
   hostName,
+  invitee,
   rsvp,
 }: {
   event: EventRow;
   hostName: string;
+  invitee: InviteeRow;
   rsvp: RsvpRow;
 }) {
   const weekday = weekdayName(event.starts_at);
   const counts = rsvp.attending === 1 ? countSummary(event, rsvp) : "";
+  if (isFamilyInvite(invitee)) {
+    return (
+      <div>
+        <h2>{familyRsvpHeading(rsvp.attending)}</h2>
+        {counts ? <p className="lede">{counts}</p> : null}
+        {event.ask_comment && rsvp.comment ? <p>Note: {rsvp.comment}</p> : null}
+      </div>
+    );
+  }
   if (rsvp.attending === 1) {
     return (
       <div>

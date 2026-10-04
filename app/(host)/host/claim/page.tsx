@@ -19,7 +19,11 @@ export default async function HostClaimPage({
   return (
     <NotFoundView
       title="This link has expired"
-      body="Claim links work until they're opened, or for 7 days. If you saved your dashboard link, use that. You can also find your parties with the email you used to create them."
+      body={
+        process.env.HOST_RECOVER_LINK === "1"
+          ? "Claim links work until they're opened, or for 7 days. If you saved your dashboard link, use that. You can also find your parties with the email you used to create them."
+          : "Claim links work until they're opened, or for 7 days. If you saved your dashboard link, use that."
+      }
     />
   );
 }

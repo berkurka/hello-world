@@ -10,6 +10,10 @@ export function appendSendError(text: string, error?: string) {
   return `${text} ${detail}`;
 }
 
+export function isFamilyInvite(invitee: { email2?: string | null }) {
+  return Boolean(invitee.email2?.trim());
+}
+
 export function inviteRecipients(invitee: { email: string; email2?: string | null }) {
   const recipients: string[] = [];
   for (const value of [invitee.email, invitee.email2]) {

@@ -55,6 +55,11 @@ export function attendingLabel(value: number | null) {
   return "Pending";
 }
 
+/** Locked family-invite confirmation. Solo guests use the personal heading instead. */
+export function familyRsvpHeading(attending: number | null) {
+  return `Your family already RSVP'd: ${attendingLabel(attending)}`;
+}
+
 export function partyHasPassed(startsAt: string, now = Date.now()) {
   const d = new Date(startsAt);
   if (Number.isNaN(d.getTime())) return false;

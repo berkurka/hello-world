@@ -8,9 +8,11 @@ export function HostHeader() {
         Partyz
       </Link>
       <nav className="host-nav" aria-label="Host">
-        <Link className="nav-link" href={MY_PARTIES_PATH}>
-          My parties
-        </Link>
+        {process.env.HOST_PARTIES_LINK === "1" ? (
+          <Link className="nav-link" href={MY_PARTIES_PATH}>
+            My parties
+          </Link>
+        ) : null}
         <a className="btn" href="/#create">
           Create an invite
         </a>

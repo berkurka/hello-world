@@ -17,9 +17,11 @@ export function NotFoundView({
           <Link className="btn" href="/">
             Create a party
           </Link>
-          <Link className="btn ghost" href={FIND_PARTIES_PATH}>
-            Find my parties
-          </Link>
+          {process.env.HOST_RECOVER_LINK === "1" ? (
+            <Link className="btn ghost" href={FIND_PARTIES_PATH}>
+              Find my parties
+            </Link>
+          ) : null}
         </div>
       </div>
     </main>
