@@ -6,8 +6,21 @@ export type InviteDelivery = {
 
 export function appendSendError(text: string, error?: string) {
   const detail = error?.replace(/\s+/g, " ").trim();
-  if (!detail || text.includes(detail)) return text;
-  return `${text} ${detail}`;
+  if (detail) console.error("Mail provider error:", detail);
+  return text;
+}
+
+const PUBLIC_MAIL_ERRORS = new Set([
+  "Email sending isn't available right now.",
+  "Invitee has no email address.",
+]);
+
+/** User-facing send failure. Provider text is logged, not returned. */
+export function friendlyMailError(err: unknown) {
+  const message = err instanceof Error ? err.message.trim() : "";
+  if (PUBLIC_MAIL_ERRORS.has(message)) return message;
+  console.error("Mail provider error:", err);
+  return "Could not send that email. Copy the link to share it instead.";
 }
 
 export function isFamilyInvite(invitee: { email2?: string | null }) {

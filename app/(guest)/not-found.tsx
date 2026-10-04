@@ -1,13 +1,14 @@
 import { GuestFooter } from "@/app/components/guest-footer";
-import { NotFoundView } from "@/app/components/not-found-view";
 
 export default function GuestNotFound() {
   return (
     <>
-      <NotFoundView
-        title="We couldn't find that invite"
-        body="The link may be mistyped, or this party may have been removed."
-      />
+      <main className="wrap">
+        <div className="card stack">
+          <h1>We couldn&apos;t find that invite</h1>
+          <p className="lede">The link may be mistyped, or this party may have been removed.</p>
+        </div>
+      </main>
       <GuestFooter />
     </>
   );

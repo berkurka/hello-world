@@ -5,7 +5,6 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 export type WelcomeState = {
   mail: string | null;
-  mailError: string | null;
 };
 
 let welcome: WelcomeState | null = null;
@@ -54,7 +53,7 @@ export function AppNotices() {
     if (error) next.push({ id: Date.now() + 1, kind: "error", text: error });
     if (done === "1") next.push({ id: Date.now() + 2, kind: "ok", text: "Saved" });
     if (next.length) setToasts((current) => [...next, ...current].slice(0, 4));
-    if (welcomeFlag || mail || mailError) publishWelcome({ mail, mailError });
+    if (welcomeFlag || mail || mailError) publishWelcome({ mail });
     const kept = new URLSearchParams(params.toString());
     for (const key of DROP) kept.delete(key);
     const query = kept.toString();

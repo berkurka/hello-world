@@ -18,7 +18,7 @@ import {
 import { asBool, asCount, isEmail, normalizeStoredEmail } from "@/lib/format";
 import { goingNeedsPeople } from "@/lib/party-stats";
 import { themeById } from "@/lib/themes";
-import { appendSendError, familyInviteNotice, unsentBatchNotice } from "@/lib/invite-delivery";
+import { appendSendError, familyInviteNotice, friendlyMailError, unsentBatchNotice } from "@/lib/invite-delivery";
 import { newId, newToken } from "@/lib/ids";
 import {
   applyExistingEmails,
@@ -155,7 +155,6 @@ export async function createEvent(formData: FormData) {
   }
 
   let mail: "sent" | "skipped" | "failed" = "skipped";
-  let mailError = "";
   if (mailConfigured()) {
     try {
       await sendHostClaimEmail({
@@ -186,12 +185,11 @@ export async function createEvent(formData: FormData) {
       mail = "sent";
     } catch (err) {
       mail = "failed";
-      mailError = providerErrorMessage(err);
+      console.error("Host claim email failed:", providerErrorMessage(err));
     }
   }
 
   const created = new URLSearchParams({ t: adminToken, welcome: "1", mail });
-  if (mailError) created.set("mailError", mailError);
   redirect(`/e/${id}/manage?${created.toString()}`);
 }
 
@@ -338,8 +336,9 @@ export async function sendInvite(formData: FormData) {
   try {
     delivery = await deliverInvite(event.id, inviteeId);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Could not send invite.";
-    redirect(`/e/${event.id}/manage?t=${event.admin_token}&error=` + encodeURIComponent(message));
+    redirect(
+      `/e/${event.id}/manage?t=${event.admin_token}&error=` + encodeURIComponent(friendlyMailError(err)),
+    );
   }
   revalidatePath(`/e/${event.id}/manage`);
   if (delivery.sent.length === 0) {
@@ -372,7 +371,7 @@ export async function sendAllUnsent(formData: FormData) {
       failed.push(...delivery.failed);
       if (delivery.error) errors.push(delivery.error);
     } catch (err) {
-      stopped = err instanceof Error ? err.message : "Could not send invites.";
+      stopped = friendlyMailError(err);
       break;
     }
   }

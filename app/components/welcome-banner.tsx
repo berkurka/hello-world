@@ -1,6 +1,5 @@
 "use client";
 
-import { ErrorDetails } from "@/app/components/ui/error-details";
 import { useWelcome } from "@/app/components/app-notices";
 
 export function WelcomeBanner({ hostEmail }: { hostEmail: string | null }) {
@@ -25,7 +24,6 @@ export function WelcomeBanner({ hostEmail }: { hostEmail: string | null }) {
     <div className={mail === "failed" ? "flash error" : "flash notice"} style={{ marginBottom: "1rem" }}>
       <strong>{title}</strong>
       <p>{body}</p>
-      {mail === "failed" && welcome.mailError ? <ErrorDetails text={welcome.mailError} /> : null}
     </div>
   );
 }

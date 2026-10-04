@@ -28,6 +28,7 @@ export function GuestList({
   token,
   canEmail,
   sendInvite,
+  showNotes,
 }: {
   guests: GuestCardModel[];
   partyTitle: string;
@@ -35,6 +36,7 @@ export function GuestList({
   token: string;
   canEmail: boolean;
   sendInvite: (formData: FormData) => void | Promise<void>;
+  showNotes: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | RsvpStatus>("all");
@@ -100,7 +102,7 @@ export function GuestList({
               <StatusChip status={guest.status} />
             </div>
             {guest.counts ? <p>{guest.counts}</p> : null}
-            {guest.comment ? <p>{guest.comment}</p> : null}
+            {showNotes && guest.comment ? <p>{guest.comment}</p> : null}
             <InviteStatus invited={guest.invited} />
             <GuestActions
               guest={guest}
@@ -121,7 +123,7 @@ export function GuestList({
               <th scope="col">Email</th>
               <th scope="col">Reply</th>
               <th scope="col">Party</th>
-              <th scope="col">Note</th>
+              {showNotes ? <th scope="col">Note</th> : null}
               <th scope="col">Invite</th>
               <th scope="col">Share</th>
             </tr>
@@ -143,7 +145,7 @@ export function GuestList({
                   <StatusChip status={guest.status} />
                 </td>
                 <td>{guest.counts}</td>
-                <td>{guest.comment}</td>
+                {showNotes ? <td>{guest.comment}</td> : null}
                 <td>
                   <InviteStatus invited={guest.invited} />
                 </td>
@@ -211,7 +213,7 @@ function GuestActions({
   return (
     <div className="actions">
       <CopyButton text={guest.url} label="Copy link" className="btn" />
-      <a className="btn ghost" href={textInviteHref(partyTitle, guest.url)}>
+      <a className="btn ghost sms-link" href={textInviteHref(partyTitle, guest.url)}>
         <SmsIcon />
         Text link
       </a>

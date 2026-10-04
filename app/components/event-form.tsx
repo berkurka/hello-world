@@ -124,6 +124,7 @@ export function EventForm({
   );
   const [scrollTick, setScrollTick] = useState(0);
   const [photoUrl, setPhotoUrl] = useState<string | null>(event ? partyImagePath(event.id) : null);
+  const [photoBroken, setPhotoBroken] = useState(false);
   const [removePhoto, setRemovePhoto] = useState(false);
   const isCreate = !event;
   const hasImage = Boolean(event?.party_image_mime);
@@ -254,6 +255,7 @@ export function EventForm({
   function onPhoto(file: File | null) {
     if (!file || file.size === 0) return;
     setRemovePhoto(false);
+    setPhotoBroken(false);
     const url = URL.createObjectURL(file);
     setPhotoUrl((current) => {
       if (current?.startsWith("blob:")) URL.revokeObjectURL(current);
@@ -268,7 +270,7 @@ export function EventForm({
           endsTime && isTime(endsTime) ? `${startsDate}T${endsTime.slice(0, 5)}` : null,
         )
       : "Date and time";
-  const previewImage = removePhoto ? null : photoUrl;
+  const previewImage = removePhoto || photoBroken ? null : photoUrl;
 
   return (
     <form action={submit} noValidate>
@@ -427,7 +429,11 @@ export function EventForm({
               <div className={invalidKey === "partyImage" ? "field is-invalid" : "field"}>
                 <span>Cover photo</span>
                 <div className={invalidKey === "partyImage" ? "drop is-invalid" : "drop"}>
-                  {previewImage ? <img src={previewImage} alt="" /> : <span className="hint">Drop a photo, or tap to choose. JPEG, PNG, WebP, or GIF. Max 1 MB.</span>}
+                  {previewImage ? (
+                    <img src={previewImage} alt="" onError={() => setPhotoBroken(true)} />
+                  ) : (
+                    <span className="hint">Drop a photo, or tap to choose. JPEG, PNG, WebP, or GIF. Max 1 MB.</span>
+                  )}
                   <input
                     id={FIELD_IDS.partyImage}
                     name="partyImage"

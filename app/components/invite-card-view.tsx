@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { PartyPhoto } from "@/app/components/party-photo";
 import { themeById, type DisplayFont, type InviteTheme } from "@/lib/themes";
 
 function displayStack(display: DisplayFont) {
@@ -64,7 +65,7 @@ export function InviteCardView({
       <div className="invite-frame">
         <div className="invite-paper">
           <div className="invite-media" aria-hidden={imageSrc ? undefined : true}>
-            {imageSrc ? <img src={imageSrc} alt="" /> : null}
+            {imageSrc ? <PartyPhoto src={imageSrc} /> : null}
           </div>
           <div className="invite-body">
             <p className="invite-kicker">You&apos;re invited</p>

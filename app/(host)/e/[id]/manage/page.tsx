@@ -138,6 +138,7 @@ export default async function ManageEventPage({
                 token={t}
                 canEmail={canEmail}
                 sendInvite={sendInvite}
+                showNotes={event.ask_comment === 1}
               />
             ) : null}
           </div>
