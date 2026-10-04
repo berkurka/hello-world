@@ -2,7 +2,7 @@
 
 import { after } from "next/server";
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { hostEmailChangeUrl, hostLoginUrl, rsvpUrl } from "@/lib/app-url";
 import { isValidTimeZone, resolveEndsAt } from "@/lib/calendar";
 import {
@@ -34,7 +34,7 @@ import {
   startSession,
   type HostAccess,
 } from "@/lib/host-login";
-import { appendSendError, familyInviteNotice, unsentBatchNotice } from "@/lib/invite-delivery";
+import { appendSendError, familyInviteNotice, friendlyMailError, unsentBatchNotice } from "@/lib/invite-delivery";
 import { newId, newToken } from "@/lib/ids";
 import {
   applyExistingEmails,
@@ -51,7 +51,9 @@ import {
   sendHostSignInEmail,
   sendInviteEmail,
 } from "@/lib/mail";
+import { goingNeedsPeople } from "@/lib/party-stats";
 import { inspectPartyImage } from "@/lib/party-image";
+import { themeById } from "@/lib/themes";
 import {
   clearDeviceCookie,
   clearSessionCookie,
@@ -110,6 +112,7 @@ function eventFields(formData: FormData) {
   const endsTimeRaw = firstMatch(formData, "endsTime", /^\d{2}:\d{2}/);
   const endsTime = endsTimeRaw.slice(0, 5);
   const location = required(formData, "location");
+  const notes = required(formData, "notes").slice(0, 2000);
   const hostName = required(formData, "hostName");
   const timezoneRaw = required(formData, "timezone");
   const timezone = isValidTimeZone(timezoneRaw) ? timezoneRaw : null;
@@ -117,15 +120,23 @@ function eventFields(formData: FormData) {
     title,
     startsAt,
     endsAt: startsAt ? resolveEndsAt(startsAt, endsTime) : null,
+    endsTime,
     location,
+    notes,
     hostName,
     timezone,
+    theme: themeById(required(formData, "theme")).id,
     allowMaybe: asBool(formData.get("allowMaybe")) ? 1 : 0,
     askComment: asBool(formData.get("askComment")) ? 1 : 0,
     askAdults: asBool(formData.get("askAdults")) ? 1 : 0,
     askKids: asBool(formData.get("askKids")) ? 1 : 0,
     askInfants: asBool(formData.get("askInfants")) ? 1 : 0,
   };
+}
+
+function endBeforeStart(startsAt: string, endsTime: string) {
+  if (!startsAt || !endsTime) return false;
+  return `${startsAt.slice(0, 10)}T${endsTime}` <= startsAt;
 }
 
 export async function createEvent(formData: FormData) {
@@ -136,6 +147,9 @@ export async function createEvent(formData: FormData) {
   }
   if (!fields.startsAt) {
     return { error: "Date and time are required." };
+  }
+  if (endBeforeStart(fields.startsAt, fields.endsTime)) {
+    return { error: "End time must be after the start time." };
   }
   if (!fields.hostName) {
     return { error: "Host name is required." };
@@ -151,10 +165,10 @@ export async function createEvent(formData: FormData) {
   const now = new Date().toISOString();
   await run(
     `INSERT INTO events (
-      id, admin_token, title, starts_at, ends_at, location, host_name, host_email,
+      id, admin_token, title, starts_at, ends_at, location, notes, host_name, host_email,
       host_claim_token, host_claimed_at, ask_comment, ask_adults, ask_kids, ask_infants,
-      allow_maybe, party_image_mime, timezone, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+      allow_maybe, party_image_mime, theme, timezone, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
     [
       id,
       adminToken,
@@ -162,6 +176,7 @@ export async function createEvent(formData: FormData) {
       fields.startsAt,
       fields.endsAt,
       fields.location,
+      fields.notes,
       fields.hostName,
       hostEmail,
       hostClaimToken,
@@ -170,6 +185,7 @@ export async function createEvent(formData: FormData) {
       fields.askKids,
       fields.askInfants,
       fields.allowMaybe,
+      fields.theme,
       fields.timezone,
       now,
       now,
@@ -202,8 +218,8 @@ export async function createEvent(formData: FormData) {
     }
   }
 
-  const created = new URLSearchParams({ t: adminToken, mail });
-  redirect(`/e/${id}/created?${created.toString()}`);
+  const created = new URLSearchParams({ t: adminToken, welcome: "1", mail });
+  redirect(`/e/${id}/manage?${created.toString()}`);
 }
 
 export async function updateEvent(formData: FormData) {
@@ -215,6 +231,9 @@ export async function updateEvent(formData: FormData) {
   if (!fields.startsAt) {
     return { error: "Date and time are required." };
   }
+  if (endBeforeStart(fields.startsAt, fields.endsTime)) {
+    return { error: "End time must be after the start time." };
+  }
   if (!fields.hostName) {
     return { error: "Host name is required." };
   }
@@ -222,21 +241,23 @@ export async function updateEvent(formData: FormData) {
   if (image.kind === "error") return { error: image.error };
   await run(
     `UPDATE events
-     SET title = ?, starts_at = ?, ends_at = ?, location = ?, host_name = ?,
+     SET title = ?, starts_at = ?, ends_at = ?, location = ?, notes = ?, host_name = ?,
          ask_comment = ?, ask_adults = ?, ask_kids = ?, ask_infants = ?, allow_maybe = ?,
-         timezone = COALESCE(timezone, ?), updated_at = ?
+         theme = ?, timezone = COALESCE(timezone, ?), updated_at = ?
      WHERE id = ?`,
     [
       fields.title,
       fields.startsAt,
       fields.endsAt,
       fields.location,
+      fields.notes,
       fields.hostName,
       fields.askComment,
       fields.askAdults,
       fields.askKids,
       fields.askInfants,
       fields.allowMaybe,
+      fields.theme,
       fields.timezone,
       new Date().toISOString(),
       event.id,
@@ -327,9 +348,8 @@ async function deliverInvite(eventId: string, inviteeId: string) {
   const invitee = invitees.find((row) => row.id === inviteeId);
   if (!invitee) throw new Error("Invitee not found");
   if (!mailConfigured()) {
-    throw new Error(
-      "Email is not configured. Copy the RSVP link below, or set SMTP_HOST, SMTP_USER, SMTP_PASS, and MAIL_FROM.",
-    );
+    console.error("Email is not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASS, and MAIL_FROM.");
+    throw new Error("Email sending isn't available right now.");
   }
   const delivery = await sendInviteEmail({
     event,
@@ -352,8 +372,7 @@ export async function sendInvite(formData: FormData) {
   try {
     delivery = await deliverInvite(event.id, inviteeId);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Could not send invite.";
-    redirect(managePath(event, { error: message }, access));
+    redirect(managePath(event, { error: friendlyMailError(err) }, access));
   }
   revalidatePath(`/e/${event.id}/manage`);
   if (delivery.sent.length === 0) {
@@ -390,7 +409,7 @@ export async function sendAllUnsent(formData: FormData) {
       failed.push(...delivery.failed);
       if (delivery.error) errors.push(delivery.error);
     } catch (err) {
-      stopped = err instanceof Error ? err.message : "Could not send invites.";
+      stopped = friendlyMailError(err);
       break;
     }
   }
@@ -408,9 +427,9 @@ export async function sendAllUnsent(formData: FormData) {
 export async function saveRsvp(formData: FormData) {
   const token = required(formData, "token");
   const invitee = await getInviteeByToken(token);
-  if (!invitee) redirect("/");
+  if (!invitee) notFound();
   const event = await getEvent(invitee.event_id);
-  if (!event) redirect("/");
+  if (!event) notFound();
 
   const attendingRaw = required(formData, "attending");
   const allowMaybe = event.allow_maybe !== 0;
@@ -424,6 +443,9 @@ export async function saveRsvp(formData: FormData) {
   const adults = keepCounts && event.ask_adults ? asCount(formData.get("adults")) : 0;
   const kids = keepCounts && event.ask_kids ? asCount(formData.get("kids")) : 0;
   const infants = keepCounts && event.ask_infants ? asCount(formData.get("infants")) : 0;
+  if (keepCounts && goingNeedsPeople(event, adults, kids, infants)) {
+    redirect(`/rsvp/${token}?error=` + encodeURIComponent("Add at least one person."));
+  }
 
   const existing = await getRsvp(invitee.id);
   const now = new Date().toISOString();

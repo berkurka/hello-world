@@ -72,6 +72,8 @@ async function ensureSchema() {
       ask_infants INTEGER NOT NULL DEFAULT 0,
       allow_maybe INTEGER NOT NULL DEFAULT 0,
       party_image_mime TEXT,
+      theme TEXT NOT NULL DEFAULT 'classic',
+      notes TEXT NOT NULL DEFAULT '',
       timezone TEXT,
       ends_at TEXT,
       updated_at TEXT,
@@ -120,6 +122,8 @@ async function ensureSchema() {
   await addColumnIfMissing("events", "party_image_mime", "TEXT");
   await addColumnIfMissing("events", "host_email_verified_at", "TEXT");
   await addColumnIfMissing("events", "allow_maybe", "INTEGER NOT NULL DEFAULT 0");
+  await addColumnIfMissing("events", "theme", "TEXT NOT NULL DEFAULT 'classic'");
+  await addColumnIfMissing("events", "notes", "TEXT NOT NULL DEFAULT ''");
   await addColumnIfMissing("events", "timezone", "TEXT");
   await addColumnIfMissing("events", "ends_at", "TEXT");
   await addColumnIfMissing("events", "updated_at", "TEXT");

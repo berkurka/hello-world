@@ -9,9 +9,9 @@ export type PartyListItem = {
 
 function PartyCards({ parties }: { parties: PartyListItem[] }) {
   return (
-    <ul className="party-list">
+    <div className="stack">
       {parties.map((party) => (
-        <li key={party.id} className="card stack">
+        <div key={party.id} className="card stack">
           <div>
             <h2>{party.title}</h2>
             <p className="lede">
@@ -25,9 +25,9 @@ function PartyCards({ parties }: { parties: PartyListItem[] }) {
               Open dashboard
             </a>
           </p>
-        </li>
+        </div>
       ))}
-    </ul>
+    </div>
   );
 }
 

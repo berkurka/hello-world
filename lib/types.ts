@@ -15,6 +15,8 @@ export type EventRow = {
   ask_infants: number;
   allow_maybe: number;
   party_image_mime: string | null;
+  theme: string;
+  notes: string;
   timezone: string | null;
   ends_at: string | null;
   updated_at: string | null;

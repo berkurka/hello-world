@@ -9,6 +9,7 @@ export function PartyActions({
   location,
   details,
   icsPath,
+  showMaps = true,
 }: {
   title: string;
   startsAt: string;
@@ -17,6 +18,7 @@ export function PartyActions({
   location: string;
   details: string;
   icsPath: string;
+  showMaps?: boolean;
 }) {
   const input = { title, startsAt, endsAt, timezone, location, details };
   const google = googleCalendarUrl(input);
@@ -40,7 +42,7 @@ export function PartyActions({
             Outlook
           </a>
         ) : null}
-        {location.trim() ? <OpenInMaps location={location} /> : null}
+        {showMaps && location.trim() ? <OpenInMaps location={location} /> : null}
       </p>
     </div>
   );
