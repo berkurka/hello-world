@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { sessionCookieOptions } from "./cookie-options";
 import {
+  CREATE_EMAIL_LIMIT,
   LOGIN_EMAIL_LIMIT,
   LOGIN_IP_LIMIT,
   RECOVER_SENT_MESSAGE,
@@ -15,6 +16,7 @@ import {
 
 test("login limits are 3 per email and 10 per IP", () => {
   assert.equal(LOGIN_EMAIL_LIMIT, 3);
+  assert.equal(CREATE_EMAIL_LIMIT, 10);
   assert.equal(LOGIN_IP_LIMIT, 10);
   assert.equal(withinLoginLimits(0, 0), true);
   assert.equal(withinLoginLimits(2, 9), true);

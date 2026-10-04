@@ -13,6 +13,7 @@ export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 export const DEVICE_MAX_AGE_SECONDS = 365 * 24 * 60 * 60;
 export const LOGIN_WINDOW_MS = 60 * 60 * 1000;
 export const LOGIN_EMAIL_LIMIT = 3;
+export const CREATE_EMAIL_LIMIT = 10;
 export const LOGIN_IP_LIMIT = 10;
 export const EMAIL_CHANGE_LIMIT = 3;
 
@@ -25,6 +26,10 @@ export type HostParty = EventRow & { yes_count: number; people: number };
 
 export function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
+}
+
+export function emailLimitForPurpose(purpose: "login" | "create") {
+  return purpose === "login" ? LOGIN_EMAIL_LIMIT : CREATE_EMAIL_LIMIT;
 }
 
 export function withinLoginLimits(emailCount: number, ipCount: number) {
@@ -95,7 +100,7 @@ export async function issueLoginToken(
   const inserted = await run(
     `INSERT INTO host_login_tokens (id, email, token_hash, expires_at, used_at, created_at, request_ip, purpose)
      SELECT ?, ?, ?, ?, NULL, ?, ?, ?
-     WHERE (SELECT COUNT(*) FROM host_login_tokens WHERE email = ? AND created_at >= ?) < ?
+     WHERE (SELECT COUNT(*) FROM host_login_tokens WHERE email = ? AND purpose = ? AND created_at >= ?) < ?
        AND (SELECT COUNT(*) FROM host_login_tokens WHERE request_ip = ? AND created_at >= ?) < ?`,
     [
       newId(),
@@ -106,8 +111,9 @@ export async function issueLoginToken(
       ip,
       purpose,
       email,
+      purpose,
       since,
-      LOGIN_EMAIL_LIMIT,
+      emailLimitForPurpose(purpose),
       ip,
       since,
       LOGIN_IP_LIMIT,

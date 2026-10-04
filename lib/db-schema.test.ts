@@ -153,8 +153,32 @@ test("startup migration adds missing host and email2 columns and keeps old invit
   await access.issueHostLogin("host@example.com", "203.0.113.4");
   const limited = await access.issueHostLogin("host@example.com", "203.0.113.9");
   assert.equal(limited.status, "limited");
-  const createLimited = await access.issueLoginToken("host@example.com", "create", "198.51.100.8");
-  assert.equal(createLimited.status, "limited");
+  const createAfterRecovers = await access.issueLoginToken("host@example.com", "create", "198.51.100.8");
+  assert.equal(createAfterRecovers.status, "issued");
+
+  await db.run(
+    `INSERT INTO events (id, admin_token, title, starts_at, location, host_name, host_email, ask_comment, ask_adults, ask_kids, ask_infants, allow_maybe, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, 0, 0, 0, ?)`,
+    [
+      "e-budget",
+      "admin-budget",
+      "Budget",
+      "2026-11-01T12:00",
+      "",
+      "Alex",
+      "budget@example.com",
+      "2026-01-01T00:00:00.000Z",
+    ],
+  );
+  const budgetIp = "203.0.113.80";
+  for (let i = 0; i < 2; i++) {
+    const created = await access.issueLoginToken("budget@example.com", "create", budgetIp);
+    assert.equal(created.status, "issued");
+  }
+  for (let i = 0; i < 3; i++) {
+    const recovered = await access.issueHostLogin("budget@example.com", budgetIp);
+    assert.equal(recovered.status, "sent");
+  }
 
   const fresh = await access.issueLoginToken("fresh@example.com", "create", "198.51.100.20");
   assert.equal(fresh.status, "issued");
@@ -230,6 +254,15 @@ test("startup migration adds missing host and email2 columns and keeps old invit
   assert.equal(await db.getEventForOrganizer("e1", "admin-token"), null);
   assert.equal((await db.getEventForOrganizer("e1", rotated!))?.id, "e1");
   assert.equal(await access.deviceAllows("e1", device), false);
+  assert.equal(
+    await access.authorizeOrganizer("e1", null, { sessionToken: null, deviceToken: device }),
+    null,
+  );
+  const stillSignedIn = await access.authorizeOrganizer("e1", null, {
+    sessionToken: session,
+    deviceToken: device,
+  });
+  assert.equal(stillSignedIn?.access, "session");
   assert.equal(await access.peekEmailChange(pending.token), null);
   assert.equal(await access.redeemEmailChange(pending.token), null);
 
