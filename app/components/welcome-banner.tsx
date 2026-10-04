@@ -11,8 +11,8 @@ export function WelcomeBanner({ hostEmail }: { hostEmail: string | null }) {
   if (mail === "sent") {
     title = "Party created — check your email";
     body = hostEmail
-      ? `We emailed a dashboard link to ${hostEmail}. Save a backup link too, in case the message is delayed.`
-      : "We emailed a dashboard link. Save a backup link too, in case the message is delayed.";
+      ? `We emailed a sign-in link to ${hostEmail}. It expires in 30 minutes. Save a backup link too.`
+      : "We emailed a sign-in link. It expires in 30 minutes. Save a backup link too.";
   } else if (mail === "failed") {
     title = "Party created — email didn't send";
     body = "The party is ready. We couldn't send email, so save the backup link below.";

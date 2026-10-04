@@ -70,15 +70,18 @@ async function ensureSchema() {
       host_email TEXT,
       host_claim_token TEXT,
       host_claimed_at TEXT,
+      host_email_verified_at TEXT,
       ask_comment INTEGER NOT NULL DEFAULT 1,
       ask_adults INTEGER NOT NULL DEFAULT 1,
       ask_kids INTEGER NOT NULL DEFAULT 0,
       ask_infants INTEGER NOT NULL DEFAULT 0,
+      allow_maybe INTEGER NOT NULL DEFAULT 0,
       party_image_mime TEXT,
       theme TEXT NOT NULL DEFAULT 'classic',
       notes TEXT NOT NULL DEFAULT '',
-      ends_at TEXT,
       timezone TEXT,
+      ends_at TEXT,
+      updated_at TEXT,
       created_at TEXT NOT NULL
     )`,
     `CREATE TABLE IF NOT EXISTS invitees (
@@ -122,13 +125,98 @@ async function ensureSchema() {
   await addColumnIfMissing("events", "host_claimed_at", "TEXT");
   await addColumnIfMissing("invitees", "email2", "TEXT");
   await addColumnIfMissing("events", "party_image_mime", "TEXT");
+  await addColumnIfMissing("events", "host_email_verified_at", "TEXT");
+  await addColumnIfMissing("events", "allow_maybe", "INTEGER NOT NULL DEFAULT 0");
   await addColumnIfMissing("events", "theme", "TEXT NOT NULL DEFAULT 'classic'");
   await addColumnIfMissing("events", "notes", "TEXT NOT NULL DEFAULT ''");
-  await addColumnIfMissing("events", "ends_at", "TEXT");
   await addColumnIfMissing("events", "timezone", "TEXT");
+  await addColumnIfMissing("events", "ends_at", "TEXT");
+  await addColumnIfMissing("events", "updated_at", "TEXT");
   await db.execute(
     `CREATE UNIQUE INDEX IF NOT EXISTS events_host_claim_token ON events(host_claim_token) WHERE host_claim_token IS NOT NULL`,
   );
+  await db.execute(`CREATE INDEX IF NOT EXISTS events_host_email ON events(host_email)`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS host_login_tokens (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    used_at TEXT,
+    created_at TEXT NOT NULL,
+    request_ip TEXT,
+    purpose TEXT NOT NULL DEFAULT 'login'
+  )`);
+  await db.execute(
+    `CREATE INDEX IF NOT EXISTS host_login_tokens_email_created ON host_login_tokens(email, created_at)`,
+  );
+  await db.execute(
+    `CREATE INDEX IF NOT EXISTS host_login_tokens_ip_created ON host_login_tokens(request_ip, created_at)`,
+  );
+  await db.execute(`CREATE TABLE IF NOT EXISTS host_sessions (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS host_email_changes (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    new_email TEXT NOT NULL,
+    previous_email TEXT,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    used_at TEXT,
+    created_at TEXT NOT NULL
+  )`);
+  await db.execute(
+    `CREATE INDEX IF NOT EXISTS host_email_changes_event_created ON host_email_changes(event_id, created_at)`,
+  );
+  await addColumnIfMissing("host_email_changes", "previous_email", "TEXT");
+  await db.execute(`CREATE TABLE IF NOT EXISTS host_device_grants (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    token_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT
+  )`);
+  await addColumnIfMissing("host_device_grants", "expires_at", "TEXT");
+  await db.execute(
+    `CREATE INDEX IF NOT EXISTS host_device_grants_lookup ON host_device_grants(token_hash, event_id)`,
+  );
+  const deviceExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+  await db.execute({
+    sql: `UPDATE host_device_grants SET expires_at = ? WHERE expires_at IS NULL`,
+    args: [deviceExpiry],
+  });
+  await db.execute(`CREATE TABLE IF NOT EXISTS schema_flags (
+    name TEXT PRIMARY KEY,
+    created_at TEXT
+  )`);
+  await addColumnIfMissing("schema_flags", "created_at", "TEXT");
+  await backfillAllowMaybeOff(db);
+}
+
+const ALLOW_MAYBE_EXISTING_OFF = "allow_maybe_existing_off";
+
+async function backfillAllowMaybeOff(db: Client) {
+  const markedAt = new Date().toISOString();
+  const inserted = await db.execute({
+    sql: `INSERT OR IGNORE INTO schema_flags (name, created_at) VALUES (?, ?)`,
+    args: [ALLOW_MAYBE_EXISTING_OFF, markedAt],
+  });
+  if (Number(inserted.rowsAffected) !== 1) return false;
+  await db.execute({
+    sql: `UPDATE events SET allow_maybe = 0
+          WHERE created_at < (SELECT created_at FROM schema_flags WHERE name = ?)`,
+    args: [ALLOW_MAYBE_EXISTING_OFF],
+  });
+  return true;
+}
+
+export async function applyAllowMaybeBackfill() {
+  const db = await readyDb();
+  return backfillAllowMaybeOff(db);
 }
 
 export async function readyDb() {
@@ -146,7 +234,12 @@ export async function query<T>(sql: string, args: (string | number | null)[] = [
   const db = await readyDb();
   const rs = await db.execute({ sql, args });
   // libSQL rows are not plain objects; client components reject them.
-  return rs.rows.map((row) => JSON.parse(JSON.stringify(row))) as T[];
+  return rs.rows.map(
+    (row) =>
+      JSON.parse(
+        JSON.stringify(row, (_key, value) => (typeof value === "bigint" ? Number(value) : value)),
+      ) as T,
+  );
 }
 
 export async function queryOne<T>(sql: string, args: (string | number | null)[] = []) {
@@ -271,12 +364,15 @@ export async function saveEventImage(eventId: string, mime: string, data: string
        updated_at = excluded.updated_at`,
     [eventId, mime, data, now],
   );
-  await run(`UPDATE events SET party_image_mime = ? WHERE id = ?`, [mime, eventId]);
+  await run(`UPDATE events SET party_image_mime = ?, updated_at = ? WHERE id = ?`, [mime, now, eventId]);
 }
 
 export async function deleteEventImage(eventId: string) {
   await run(`DELETE FROM event_images WHERE event_id = ?`, [eventId]);
-  await run(`UPDATE events SET party_image_mime = NULL WHERE id = ?`, [eventId]);
+  await run(`UPDATE events SET party_image_mime = NULL, updated_at = ? WHERE id = ?`, [
+    new Date().toISOString(),
+    eventId,
+  ]);
 }
 
 export function insertInvitee(

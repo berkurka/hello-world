@@ -6,9 +6,9 @@ import test from "node:test";
 import { FIND_PARTIES_PATH, MY_PARTIES_PATH } from "./paths";
 import { appRouteExists } from "./app-route";
 
-test("my parties and find my parties stay hidden until those pages exist", () => {
-  assert.equal(appRouteExists(MY_PARTIES_PATH), false);
-  assert.equal(appRouteExists(FIND_PARTIES_PATH), false);
+test("my parties and find my parties are linked once those pages exist", () => {
+  assert.equal(appRouteExists(MY_PARTIES_PATH), true);
+  assert.equal(appRouteExists(FIND_PARTIES_PATH), true);
   assert.equal(appRouteExists("/host/claim"), true);
 });
 

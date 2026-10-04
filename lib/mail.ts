@@ -1,9 +1,13 @@
 import nodemailer, { type Transporter } from "nodemailer";
+import { icsUrl } from "./app-url";
+import { googleCalendarUrl, outlookCalendarUrl } from "./calendar";
 import { getEventImageDataUrl } from "./db";
-import { formatInviteWhen } from "./format";
+import { formatInviteWhen, formatWhen } from "./format";
 import { inviteCardPng } from "./invite-card";
 import { inviteEmailHtml } from "./invite-email";
 import { inviteRecipients, type InviteDelivery } from "./invite-delivery";
+import { googleMapsUrl } from "./maps";
+import { partyShareDescription, partyShareTitle } from "./party-share";
 import { themeById } from "./themes";
 import type { EventRow, InviteeRow } from "./types";
 
@@ -28,8 +32,10 @@ function smtpPort(value: string | undefined) {
   return port;
 }
 
+type MailEnv = Record<string, string | undefined>;
+
 /** Generic SMTP when the full set is present; otherwise legacy Gmail. */
-export function mailConfigFrom(env: NodeJS.ProcessEnv = process.env): MailConfig | null {
+export function mailConfigFrom(env: MailEnv = process.env): MailConfig | null {
   const host = trimmed(env.SMTP_HOST);
   const user = trimmed(env.SMTP_USER);
   const pass = trimmed(env.SMTP_PASS);
@@ -53,16 +59,40 @@ export function mailConfigFrom(env: NodeJS.ProcessEnv = process.env): MailConfig
   return null;
 }
 
-export function mailConfigured(env: NodeJS.ProcessEnv = process.env) {
+export function mailConfigured(env: MailEnv = process.env) {
   return mailConfigFrom(env) !== null;
 }
 
-export function mailFromHeader(env: NodeJS.ProcessEnv = process.env) {
+export function mailFromHeader(env: MailEnv = process.env) {
   const config = mailConfigFrom(env);
   if (!config) return null;
   const name = (env.FROM_NAME?.trim() || "Partyz").replace(/"/g, "");
   return `"${name}" <${config.from}>`;
 }
+
+export function hostDisplayName(hostName: string) {
+  const host = hostName.replace(/[\r\n"\\<>@]/g, " ").replace(/\s+/g, " ").trim();
+  const suffix = " via Partyz";
+  if (!host) return "Partyz";
+  const room = 60 - suffix.length;
+  const trimmed = host.length > room ? host.slice(0, room).trim() : host;
+  const name = `${trimmed}${suffix}`;
+  return name.length > 60 ? name.slice(0, 60).trim() : name;
+}
+
+export function hostFromHeader(hostName: string, env: MailEnv = process.env) {
+  const config = mailConfigFrom(env);
+  if (!config) return null;
+  return `"${hostDisplayName(hostName)}" <${config.from}>`;
+}
+
+export function inviteReplyTo(event: { host_email?: string | null; host_email_verified_at?: string | null }) {
+  if (!event.host_email_verified_at) return undefined;
+  const hostEmail = event.host_email?.trim() ?? "";
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(hostEmail) ? hostEmail : undefined;
+}
+
+export const GENERIC_MAIL_ERROR = "Could not send email. Try again in a little while.";
 
 export function providerErrorMessage(err: unknown) {
   let text = "Send failed.";
@@ -107,6 +137,62 @@ function transporter() {
   return transport;
 }
 
+export function buildInviteMail(opts: { event: EventRow; invitee: InviteeRow; rsvpLink: string }) {
+  const { event, invitee, rsvpLink } = opts;
+  const when = formatWhen(event.starts_at);
+  const preview = partyShareDescription(event);
+  const subject = partyShareTitle(event);
+  const calendar = {
+    title: event.title,
+    startsAt: event.starts_at,
+    endsAt: event.ends_at,
+    timezone: event.timezone,
+    location: event.location,
+    details: "",
+  };
+  const google = googleCalendarUrl(calendar);
+  const outlook = outlookCalendarUrl(calendar);
+  const ics = icsUrl(invitee.token);
+  const map = event.location.trim() ? googleMapsUrl(event.location.trim()) : null;
+  const replyTo = inviteReplyTo(event);
+  const textLines = [
+    preview,
+    "",
+    `Hi ${invitee.display_name},`,
+    "",
+    `${event.host_name} invited you to ${event.title}.`,
+    when,
+    event.location || "",
+    "",
+    `RSVP here: ${rsvpLink}`,
+    `Add to calendar: ${ics}`,
+  ];
+  if (google) textLines.push(`Google Calendar: ${google}`);
+  if (outlook) textLines.push(`Outlook: ${outlook}`);
+  if (map) textLines.push(`Map: ${map}`);
+  const text = textLines.join("\n");
+  const links = [
+    `<a href="${escapeHtml(ics)}">Add to calendar</a>`,
+    google ? `<a href="${escapeHtml(google)}">Google Calendar</a>` : "",
+    outlook ? `<a href="${escapeHtml(outlook)}">Outlook</a>` : "",
+    map ? `<a href="${escapeHtml(map)}">Open in Maps</a>` : "",
+  ].filter(Boolean);
+  const html = `
+      <div style="display:none;max-height:0;overflow:hidden;opacity:0">${escapeHtml(preview)}</div>
+      <div style="font-family:Georgia,serif;color:#2c1810;max-width:640px">
+        <p>Hi ${escapeHtml(invitee.display_name)},</p>
+        <p>${escapeHtml(event.host_name)} invited you to <strong>${escapeHtml(event.title)}</strong>.</p>
+        <p>
+          <img src="cid:invitation" alt="Invitation for ${escapeHtml(invitee.display_name)}" style="width:100%;max-width:640px;border:1px solid #e6d9c8" />
+        </p>
+        <p><a href="${rsvpLink}" style="display:inline-block;background:#8b2942;color:#fff;padding:12px 18px;text-decoration:none;border-radius:4px">RSVP now</a></p>
+        <p style="color:#5c4638">${links.join(" · ")}</p>
+        <p style="color:#5c4638">Or paste this link: ${escapeHtml(rsvpLink)}</p>
+      </div>
+    `;
+  return { subject, text, html, replyTo, preview };
+}
+
 export async function sendInviteEmail(opts: {
   event: EventRow;
   invitee: InviteeRow;
@@ -129,22 +215,14 @@ export async function sendInviteEmail(opts: {
     imageSrc,
     theme: theme.id,
   });
-  const from = mailFromHeader();
+  const from = hostFromHeader(event.host_name);
   if (!from) throw new Error(NOT_CONFIGURED);
+  const content = buildInviteMail({ event, invitee, rsvpLink });
   const message = {
     from,
-    subject: `You're invited: ${event.title}`,
-    text: [
-      `Hi ${invitee.display_name},`,
-      "",
-      `${event.host_name} invited you to ${event.title}.`,
-      when,
-      event.location || "",
-      "",
-      `RSVP here: ${rsvpLink}`,
-    ]
-      .filter((line) => line !== undefined)
-      .join("\n"),
+    replyTo: content.replyTo,
+    subject: content.subject,
+    text: content.text,
     html: inviteEmailHtml({
       guestName: invitee.display_name,
       hostName: event.host_name,
@@ -207,6 +285,100 @@ export async function sendHostClaimEmail(opts: {
         <p><a href="${claimLink}" style="display:inline-block;background:#8b2942;color:#fff;padding:14px 22px;text-decoration:none;border-radius:10px;font-weight:700">Open dashboard</a></p>
         <p style="color:#6a5648">Or paste this link: ${escapeHtml(claimLink)}</p>
         <p style="color:#6a5648">This link works until you open it, or for 7 days. After that, use the dashboard link you saved when you created the party.</p>
+      </div>
+    `,
+  });
+}
+
+export async function sendHostSignInEmail(opts: {
+  to: string;
+  link: string;
+  hostName?: string | null;
+  titles?: string[];
+  kind: "create" | "recover";
+}) {
+  const from = mailFromHeader();
+  if (!from) throw new Error(NOT_CONFIGURED);
+  const titles = (opts.titles ?? []).map((title) => title.trim()).filter(Boolean);
+  const party = titles.length === 1 ? titles[0] : null;
+  const greeting = opts.hostName?.trim() ? `Hi ${opts.hostName.trim()},` : "Hi,";
+  const subject =
+    opts.kind === "create" && party ? `Sign in to manage ${party}` : "Sign in to Partyz";
+  const intro =
+    opts.kind === "create" && party
+      ? `${party} is ready. This sign-in link expires in 30 minutes and works once.`
+      : "This sign-in link expires in 30 minutes and works once. It opens every party for this email.";
+  const list =
+    opts.kind === "recover" && titles.length > 0 ? `Parties: ${titles.slice(0, 5).join(", ")}` : "";
+  await transporter().sendMail({
+    from,
+    to: opts.to,
+    subject,
+    text: [greeting, "", intro, opts.link, list, "", "If you did not ask for this, you can ignore it."].filter(Boolean).join("\n"),
+    html: `
+      <div style="font-family:Georgia,serif;color:#2c1810;max-width:640px">
+        <p>${escapeHtml(greeting)}</p>
+        <p>${escapeHtml(intro)}</p>
+        <p><a href="${opts.link}" style="display:inline-block;background:#8b2942;color:#fff;padding:12px 18px;text-decoration:none;border-radius:4px">Sign in</a></p>
+        <p style="color:#5c4638">Or paste this link: ${escapeHtml(opts.link)}</p>
+        ${list ? `<p style="color:#5c4638">${escapeHtml(list)}</p>` : ""}
+        <p style="color:#5c4638">If you did not ask for this, you can ignore it.</p>
+      </div>
+    `,
+  });
+}
+
+export async function sendHostEmailChangeNotice(opts: { to: string; title: string; nextEmail: string }) {
+  const from = mailFromHeader();
+  if (!from) throw new Error(NOT_CONFIGURED);
+  const subject = `Host email change requested for ${opts.title}`;
+  const text = [
+    `Someone asked to change the host email for “${opts.title}” to ${opts.nextEmail}.`,
+    "The address changes only if that inbox confirms the link we sent there.",
+    "If this was not you, sign in and reset the dashboard link.",
+  ].join("\n");
+  await transporter().sendMail({
+    from,
+    to: opts.to,
+    subject,
+    text,
+    html: `
+      <div style="font-family:Georgia,serif;color:#2c1810;max-width:640px">
+        <p>Someone asked to change the host email for <strong>${escapeHtml(opts.title)}</strong> to <strong>${escapeHtml(opts.nextEmail)}</strong>.</p>
+        <p>The address changes only if that inbox confirms the link we sent there.</p>
+        <p>If this was not you, sign in and reset the dashboard link.</p>
+      </div>
+    `,
+  });
+}
+
+export async function sendHostEmailChangeEmail(opts: {
+  to: string;
+  link: string;
+  title: string;
+  hostName: string;
+}) {
+  const from = mailFromHeader();
+  if (!from) throw new Error(NOT_CONFIGURED);
+  const subject = `Confirm your email for ${opts.title}`;
+  await transporter().sendMail({
+    from,
+    to: opts.to,
+    subject,
+    text: [
+      opts.hostName.trim() ? `Hi ${opts.hostName.trim()},` : "Hi,",
+      "",
+      `Confirm ${opts.to} as the host email for “${opts.title}”.`,
+      "This link expires in 30 minutes and works once:",
+      opts.link,
+    ].join("\n"),
+    html: `
+      <div style="font-family:Georgia,serif;color:#2c1810;max-width:640px">
+        <p>${opts.hostName.trim() ? `Hi ${escapeHtml(opts.hostName.trim())},` : "Hi,"}</p>
+        <p>Confirm <strong>${escapeHtml(opts.to)}</strong> as the host email for <strong>${escapeHtml(opts.title)}</strong>.</p>
+        <p>This link expires in 30 minutes and works once.</p>
+        <p><a href="${opts.link}" style="display:inline-block;background:#8b2942;color:#fff;padding:12px 18px;text-decoration:none;border-radius:4px">Confirm email</a></p>
+        <p style="color:#5c4638">Or paste this link: ${escapeHtml(opts.link)}</p>
       </div>
     `,
   });

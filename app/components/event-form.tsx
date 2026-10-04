@@ -7,8 +7,8 @@ import { SubmitButton } from "@/app/components/ui/submit-button";
 import { Switch } from "@/app/components/ui/switch";
 import { BABY_LABEL, formatInviteWhen, isEmail } from "@/lib/format";
 import { fieldKeyFromMessage, inspectPartyImage, partyImagePath } from "@/lib/party-image";
+import type { EditableEvent } from "@/lib/public-event";
 import { THEME_LIST, themeById, type ThemeId } from "@/lib/themes";
-import type { EventRow } from "@/lib/types";
 
 export type EventDraft = {
   title?: string;
@@ -36,7 +36,7 @@ type FieldKey = keyof typeof FIELD_IDS;
 type ActionResult = void | { error?: string };
 
 type Props = {
-  event?: EventRow;
+  event?: EditableEvent;
   draft?: EventDraft;
   initialError?: string;
   action: (formData: FormData) => ActionResult | Promise<ActionResult>;
@@ -54,7 +54,7 @@ function defaultEventDate() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function splitStarts(event?: EventRow, draft?: EventDraft) {
+function splitStarts(event?: EditableEvent, draft?: EventDraft) {
   if (draft?.startsDate && draft?.startsTime) {
     return { date: draft.startsDate, time: draft.startsTime.slice(0, 5) };
   }
@@ -66,7 +66,7 @@ function splitStarts(event?: EventRow, draft?: EventDraft) {
   return { date: defaultEventDate(), time: "18:00" };
 }
 
-function splitEnd(event?: EventRow) {
+function splitEnd(event?: EditableEvent) {
   const raw = event?.ends_at ? event.ends_at.slice(0, 16) : "";
   if (raw.includes("T")) return raw.split("T")[1]?.slice(0, 5) ?? "";
   return "";
@@ -117,6 +117,7 @@ export function EventForm({
   const [askAdults, setAskAdults] = useState(draft?.askAdults ?? (!event || event.ask_adults === 1));
   const [askKids, setAskKids] = useState(draft?.askKids ?? event?.ask_kids === 1);
   const [askInfants, setAskInfants] = useState(draft?.askInfants ?? event?.ask_infants === 1);
+  const [allowMaybe, setAllowMaybe] = useState(event ? event.allow_maybe !== 0 : true);
   const [detailsOpen, setDetailsOpen] = useState(Boolean(event));
   const [tab, setTab] = useState<"edit" | "preview">("edit");
   const [parkSubmit, setParkSubmit] = useState(isCreate);
@@ -144,6 +145,7 @@ export function EventForm({
     askAdults,
     askKids,
     askInfants,
+    allowMaybe,
   });
   valuesRef.current = {
     title,
@@ -160,6 +162,7 @@ export function EventForm({
     askAdults,
     askKids,
     askInfants,
+    allowMaybe,
   };
 
   useEffect(() => {
@@ -264,6 +267,8 @@ export function EventForm({
     else formData.delete("askKids");
     if (v.askInfants) formData.set("askInfants", "on");
     else formData.delete("askInfants");
+    if (v.allowMaybe) formData.set("allowMaybe", "on");
+    else formData.delete("allowMaybe");
     const result = await action(formData);
     if (result && result.error) showIssue(result.error);
   }
@@ -497,6 +502,7 @@ export function EventForm({
               <fieldset className="stack">
                 <legend>What should guests tell you?</legend>
                 <p className="hint">Going and can&apos;t go are always shown.</p>
+                <Switch name="allowMaybe" label="Maybe" checked={allowMaybe} onChange={setAllowMaybe} />
                 <Switch name="askComment" label="A note" checked={askComment} onChange={setAskComment} />
                 <Switch name="askAdults" label="Adults" checked={askAdults} onChange={setAskAdults} />
                 <Switch name="askKids" label="Kids" checked={askKids} onChange={setAskKids} />

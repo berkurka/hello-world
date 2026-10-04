@@ -8,15 +8,18 @@ export type EventRow = {
   host_email: string | null;
   host_claim_token: string | null;
   host_claimed_at: string | null;
+  host_email_verified_at: string | null;
   ask_comment: number;
   ask_adults: number;
   ask_kids: number;
   ask_infants: number;
+  allow_maybe: number;
   party_image_mime: string | null;
   theme: string;
   notes: string;
-  ends_at: string | null;
   timezone: string | null;
+  ends_at: string | null;
+  updated_at: string | null;
   created_at: string;
 };
 

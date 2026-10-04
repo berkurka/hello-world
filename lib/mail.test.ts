@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mailConfigFrom, mailConfigured, mailFromHeader, providerErrorMessage } from "./mail";
+import type { EventRow, InviteeRow } from "./types";
+import { buildIcs } from "./calendar";
+import { buildInviteMail, hostDisplayName, hostFromHeader, mailConfigFrom, mailConfigured, mailFromHeader, providerErrorMessage } from "./mail";
 
 const resend = {
   SMTP_HOST: "smtp.resend.com",
@@ -67,6 +69,81 @@ test("mail is not configured when neither SMTP nor Gmail is complete", () => {
   assert.equal(mailConfigured({}), false);
   assert.equal(mailConfigured({ SMTP_HOST: "smtp.resend.com", MAIL_FROM: "a@b.co" }), false);
   assert.equal(mailFromHeader({}), null);
+});
+
+test("invite mail is from the host via Partyz", () => {
+  assert.equal(hostFromHeader("Bernardo", resend), `"Bernardo via Partyz" <onboarding@resend.dev>`);
+  assert.equal(hostFromHeader("Bob\n\"via\"", resend), `"Bob via via Partyz" <onboarding@resend.dev>`);
+  assert.equal(hostFromHeader("Ann<boss>@evil\\x", resend), `"Ann boss evil x via Partyz" <onboarding@resend.dev>`);
+  assert.equal(hostDisplayName("A".repeat(80)).length <= 60, true);
+  assert.equal(hostFromHeader("  ", resend), `"Partyz" <onboarding@resend.dev>`);
+  assert.equal(hostFromHeader("Bernardo", {}), null);
+});
+
+test("invite messages reply to the host and preview the party", () => {
+  const event = {
+    title: "Maya's 7th Birthday",
+    host_name: "Bernardo",
+    host_email: "host@example.com",
+    starts_at: "2026-10-17T14:00",
+    ends_at: null,
+    location: "Riverside Park",
+    timezone: "America/New_York",
+    host_email_verified_at: "2026-10-04T00:00:00.000Z",
+  } as EventRow;
+  const invitee = { display_name: "Priya", token: "abc" } as InviteeRow;
+  const message = buildInviteMail({
+    event,
+    invitee,
+    rsvpLink: "https://example.com/rsvp/abc",
+  });
+  assert.equal(message.subject, "Bernardo invited you to Maya's 7th Birthday");
+  assert.equal(message.replyTo, "host@example.com");
+  assert.match(message.text, /Sat, Oct 17 · 2:00 PM · Riverside Park/);
+  assert.match(message.html, /display:none/);
+  assert.match(message.text, /\/rsvp\/abc\/event\.ics/);
+  assert.match(message.text, /calendar\.google\.com/);
+  assert.doesNotMatch(message.text, /calendar\.google\.com[^\n]*rsvp/i);
+  assert.doesNotMatch(message.text, /outlook\.live\.com[^\n]*rsvp/i);
+  assert.match(message.text, /maps/);
+  const unverified = buildInviteMail({
+    event: { ...event, host_email_verified_at: null },
+    invitee,
+    rsvpLink: "https://example.com/rsvp/abc",
+  });
+  assert.equal(unverified.replyTo, undefined);
+});
+
+test("google and outlook links leave out the rsvp token", () => {
+  const token = "guest-token-secret";
+  const message = buildInviteMail({
+    event: {
+      title: "Maya's 7th Birthday",
+      host_name: "Bernardo",
+      host_email: "host@example.com",
+      host_email_verified_at: "2026-10-04T00:00:00.000Z",
+      starts_at: "2026-10-17T14:00",
+      ends_at: null,
+      location: "Riverside Park",
+      timezone: "America/New_York",
+    } as EventRow,
+    invitee: { display_name: "Priya", token } as InviteeRow,
+    rsvpLink: `https://example.com/rsvp/${token}`,
+  });
+  const calendarLines = message.text.split("\n").filter((line) => line.includes("calendar.google.com") || line.includes("outlook.live.com"));
+  assert.equal(calendarLines.length, 2);
+  for (const line of calendarLines) assert.equal(line.includes(token), false);
+  assert.match(message.text, new RegExp(`/rsvp/${token}/event\\.ics`));
+  const ics = buildIcs({
+    uid: "guest@partyz",
+    title: "Maya's 7th Birthday",
+    startsAt: "2026-10-17T14:00",
+    endsAt: null,
+    timezone: "America/New_York",
+    location: "Riverside Park",
+    description: `RSVP: https://example.com/rsvp/${token}`,
+  });
+  assert.match(ics ?? "", new RegExp(token));
 });
 
 test("provider errors keep the SMTP response text", () => {

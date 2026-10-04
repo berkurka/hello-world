@@ -1,5 +1,7 @@
 import { GuestInvite } from "@/app/components/guest-invite";
-import { getEventForOrganizer } from "@/lib/db";
+import { authorizeOrganizer } from "@/lib/host-login";
+import { toPublicEvent } from "@/lib/public-event";
+import { readHostCreds } from "@/lib/request-auth";
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -13,8 +15,7 @@ export default async function PreviewPage({
 }) {
   const { id } = await params;
   const { t } = await searchParams;
-  if (!t) notFound();
-  const event = await getEventForOrganizer(id, t);
-  if (!event) notFound();
-  return <GuestInvite event={event} guestName="Guest" rsvp={null} preview />;
+  const auth = await authorizeOrganizer(id, t?.trim() || null, await readHostCreds());
+  if (!auth) notFound();
+  return <GuestInvite event={toPublicEvent(auth.event)} guestName="Guest" rsvp={null} preview />;
 }

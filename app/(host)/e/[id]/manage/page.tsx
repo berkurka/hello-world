@@ -6,20 +6,27 @@ import { EventForm } from "@/app/components/event-form";
 import { GuestList, type GuestCardModel } from "@/app/components/guest-list";
 import { SharePanel } from "@/app/components/share-panel";
 import { StatusChip } from "@/app/components/ui/status-chip";
+import { HostPartySettings } from "@/app/components/host-party-settings";
 import { WelcomeBanner } from "@/app/components/welcome-banner";
 import { manageUrl, rsvpUrl } from "@/lib/app-url";
-import { getEventForOrganizer, listInvitees } from "@/lib/db";
+import { listInvitees } from "@/lib/db";
 import {
   countSummary,
   formatInviteWhen,
   formatInvitedAt,
+  headcountAttending,
   peopleLabel,
   rsvpStatus,
   type RsvpStatus,
 } from "@/lib/format";
+import { authorizeOrganizer, canChangeHostEmail, sessionEmailFromToken } from "@/lib/host-login";
 import { INVITEE_CSV_FILENAME } from "@/lib/invitee-csv";
 import { mailConfigured } from "@/lib/mail";
+import { FIND_PARTIES_PATH } from "@/lib/paths";
 import { peopleComing, replyProgress, statusCounts } from "@/lib/party-stats";
+import { toEditableEvent } from "@/lib/public-event";
+import { readHostCreds } from "@/lib/request-auth";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -35,12 +42,16 @@ export default async function ManageEventPage({
 }) {
   const { id } = await params;
   const { t } = await searchParams;
-  if (!t) notFound();
-  const event = await getEventForOrganizer(id, t);
-  if (!event) notFound();
+  const creds = await readHostCreds();
+  const auth = await authorizeOrganizer(id, t?.trim() || null, creds);
+  if (!auth) notFound();
+  const { event, access } = auth;
+  const formToken = access === "token" ? event.admin_token : "";
+  const signedInEmail = await sessionEmailFromToken(creds.sessionToken);
   const invitees = await listInvitees(event.id);
   const canEmail = mailConfigured();
-  const coming = peopleComing(event, invitees);
+  const allowMaybe = event.allow_maybe !== 0;
+  const coming = peopleComing(event, invitees, allowMaybe);
   const progress = replyProgress(invitees);
   const counts = statusCounts(invitees);
   const unsent = invitees.filter((row) => !row.invited_at).length;
@@ -51,7 +62,7 @@ export default async function ManageEventPage({
     email: row.email,
     email2: row.email2,
     status: rsvpStatus(row.attending),
-    counts: row.attending === 1 ? countSummary(event, row) : "",
+    counts: headcountAttending(row.attending, allowMaybe) ? countSummary(event, row) : "",
     comment: event.ask_comment && row.comment?.trim() ? row.comment : "",
     invited: formatInvitedAt(row.invited_at),
     url: rsvpUrl(row.token),
@@ -61,15 +72,30 @@ export default async function ManageEventPage({
   return (
     <main className="wrap">
       <WelcomeBanner hostEmail={event.host_email} />
+      {access === "session" && signedInEmail ? (
+        <p className="hint" style={{ marginBottom: "1rem" }}>
+          Signed in as {signedInEmail}.
+        </p>
+      ) : canEmail ? (
+        <p className="hint" style={{ marginBottom: "1rem" }}>
+          Anyone with this page&apos;s link can manage the party.{" "}
+          <Link href={FIND_PARTIES_PATH}>Find my parties</Link>
+          {event.host_email ? ` from ${event.host_email}` : ""}.
+        </p>
+      ) : null}
       <DashboardShell
         title={event.title}
         when={formatInviteWhen(event.starts_at, event.ends_at)}
         place={event.location}
-        previewHref={`/e/${event.id}/preview?t=${encodeURIComponent(t)}`}
+        previewHref={
+          formToken
+            ? `/e/${event.id}/preview?t=${encodeURIComponent(formToken)}`
+            : `/e/${event.id}/preview`
+        }
         editor={
-          <EventForm action={updateEvent} event={event} submitLabel="Save changes" showPreview={false}>
+          <EventForm action={updateEvent} event={toEditableEvent(event)} submitLabel="Save changes" showPreview={false}>
             <input type="hidden" name="eventId" value={event.id} />
-            <input type="hidden" name="t" value={t} />
+            {formToken ? <input type="hidden" name="t" value={formToken} /> : null}
           </EventForm>
         }
       >
@@ -94,6 +120,11 @@ export default async function ManageEventPage({
                 <StatusChip key={status} status={status} count={counts[status]} />
               ))}
             </div>
+            {!allowMaybe && counts.maybe > 0 ? (
+              <p className="hint">
+                Maybe is off. Those guests need to choose yes or no, and their counts are not included.
+              </p>
+            ) : null}
           </section>
         ) : (
           <section className="card stack">
@@ -135,7 +166,7 @@ export default async function ManageEventPage({
                 guests={guests}
                 partyTitle={event.title}
                 eventId={event.id}
-                token={t}
+                token={formToken}
                 canEmail={canEmail}
                 sendInvite={sendInvite}
                 showNotes={event.ask_comment === 1}
@@ -145,7 +176,7 @@ export default async function ManageEventPage({
           <div className="dash-side stack">
             <SharePanel
               eventId={event.id}
-              token={t}
+              token={formToken}
               canEmail={canEmail}
               unsent={unsent}
               guestCount={invitees.length}
@@ -153,12 +184,20 @@ export default async function ManageEventPage({
             />
             <AddGuests
               eventId={event.id}
-              token={t}
+              token={formToken}
               addInvitee={addInvitee}
               importInvitees={importInvitees}
               templateHref={`/${INVITEE_CSV_FILENAME}`}
             />
             <BackupLink url={dashboard} hostEmail={event.host_email} />
+            <HostPartySettings
+              event={event}
+              manageToken={formToken || null}
+              mailOn={canEmail}
+              canChangeEmail={canChangeHostEmail(signedInEmail, event.host_email, undefined, access)}
+              sessionEmail={signedInEmail}
+              access={access}
+            />
           </div>
         </div>
       </DashboardShell>

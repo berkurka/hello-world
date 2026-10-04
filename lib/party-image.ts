@@ -8,8 +8,10 @@ export type PartyImageOk = { ok: true; mime: (typeof PARTY_IMAGE_TYPES)[number] 
 export type PartyImageErr = { ok: false; error: string };
 export type PartyImageInspect = PartyImageOk | PartyImageErr;
 
-export function partyImagePath(eventId: string) {
-  return `/api/party-image/${eventId}`;
+export function partyImagePath(eventId: string, version?: string | null) {
+  const path = `/api/party-image/${eventId}`;
+  if (!version) return path;
+  return `${path}?v=${encodeURIComponent(version)}`;
 }
 
 export function sniffImageMime(bytes: Uint8Array): (typeof PARTY_IMAGE_TYPES)[number] | null {

@@ -17,8 +17,8 @@ export function countsEnabled(event: CountEvent) {
   return Boolean(event.ask_adults || event.ask_kids || event.ask_infants);
 }
 
-export function headcount(event: CountEvent, row: CountReply) {
-  if (row.attending !== 1) return 0;
+export function headcount(event: CountEvent, row: CountReply, allowMaybe = false) {
+  if (row.attending !== 1 && !(allowMaybe && row.attending === 2)) return 0;
   if (!countsEnabled(event)) return 1;
   return (
     (event.ask_adults ? (row.adults ?? 0) : 0) +
@@ -27,8 +27,8 @@ export function headcount(event: CountEvent, row: CountReply) {
   );
 }
 
-export function peopleComing(event: CountEvent, rows: CountReply[]) {
-  return rows.reduce((sum, row) => sum + headcount(event, row), 0);
+export function peopleComing(event: CountEvent, rows: CountReply[], allowMaybe = false) {
+  return rows.reduce((sum, row) => sum + headcount(event, row, allowMaybe), 0);
 }
 
 export function goingNeedsPeople(event: CountEvent, adults: number, kids: number, infants: number) {

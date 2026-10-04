@@ -4,31 +4,35 @@ import { PartyFacts } from "@/app/components/party-facts";
 import { RsvpResponse } from "@/app/components/rsvp-response";
 import { formatInviteWhen, formatWhen, partyHasPassed } from "@/lib/format";
 import { partyImagePath } from "@/lib/party-image";
+import { eventVersion } from "@/lib/party-share";
 import {
   toPublicEvent,
   toPublicInvitee,
-  type GuestInviteeInput,
-  type PublicEventInput,
+  toPublicRsvp,
+  type PublicEvent,
+  type PublicInvitee,
+  type PublicRsvp,
 } from "@/lib/public-event";
 import { themeById } from "@/lib/themes";
-import type { RsvpRow } from "@/lib/types";
 import type { ReactNode } from "react";
 
 export function GuestInvite({
   event: source,
   guestName,
   invitee: inviteeSource,
-  rsvp,
+  token,
+  rsvp: rsvpSource,
   error,
   preview = false,
   calendar,
   maps,
   allowMaybe = false,
 }: {
-  event: PublicEventInput;
+  event: PublicEvent;
   guestName: string;
-  invitee?: GuestInviteeInput | null;
-  rsvp: RsvpRow | null;
+  invitee?: PublicInvitee | null;
+  token?: string | null;
+  rsvp: (PublicRsvp & { invitee_id?: string }) | null;
   error?: string;
   preview?: boolean;
   calendar?: ReactNode;
@@ -37,8 +41,9 @@ export function GuestInvite({
 }) {
   const event = toPublicEvent(source);
   const invitee = inviteeSource ? toPublicInvitee(inviteeSource) : null;
+  const rsvp = rsvpSource ? toPublicRsvp(rsvpSource) : null;
   const theme = themeById(event.theme);
-  const imageSrc = event.party_image_mime ? partyImagePath(event.id) : null;
+  const imageSrc = event.party_image_mime ? partyImagePath(event.id, eventVersion(event)) : null;
   const when = formatInviteWhen(event.starts_at, event.ends_at);
   const passed = partyHasPassed(event.starts_at);
   return (
@@ -64,13 +69,13 @@ export function GuestInvite({
           calendar={calendar}
           maps={maps}
         />
-        {preview || !inviteeSource || !invitee ? (
+        {preview || !invitee || !token ? (
           <div className="card stack">
             <p className="lede">Guests choose Going or Can&apos;t go here.</p>
           </div>
         ) : (
           <RsvpResponse
-            token={inviteeSource.token}
+            token={token}
             event={event}
             invitee={invitee}
             rsvp={rsvp}

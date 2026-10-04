@@ -3,21 +3,21 @@
 import { useState } from "react";
 import { RsvpForm } from "@/app/components/rsvp-form";
 import { countSummary, familyRsvpHeading, weekdayName } from "@/lib/format";
-import type { PublicEvent, PublicInvitee } from "@/lib/public-event";
-import type { RsvpRow } from "@/lib/types";
+import type { PublicEvent, PublicInvitee, PublicRsvp } from "@/lib/public-event";
 
 type Props = {
   token: string;
   event: PublicEvent;
   invitee: PublicInvitee;
-  rsvp: RsvpRow | null;
+  rsvp: PublicRsvp | null;
   openForm?: boolean;
   passed?: boolean;
   allowMaybe?: boolean;
 };
 
 export function RsvpResponse({ token, event, invitee, rsvp, openForm, passed, allowMaybe }: Props) {
-  const [editing, setEditing] = useState(!rsvp || Boolean(openForm));
+  const staleMaybe = Boolean(rsvp && rsvp.attending === 2 && !allowMaybe);
+  const [editing, setEditing] = useState(!rsvp || Boolean(openForm) || staleMaybe);
   if (passed) {
     return (
       <div className="card stack confirm">
@@ -40,6 +40,9 @@ export function RsvpResponse({ token, event, invitee, rsvp, openForm, passed, al
   }
   return (
     <div className="card">
+      {staleMaybe ? (
+        <p className="lede">Maybe is no longer an option for this party. Please choose yes or no.</p>
+      ) : null}
       <RsvpForm token={token} event={event} invitee={invitee} rsvp={rsvp} allowMaybe={allowMaybe} />
     </div>
   );
@@ -60,10 +63,10 @@ function Answer({
   event: PublicEvent;
   hostName: string;
   invitee: PublicInvitee;
-  rsvp: RsvpRow;
+  rsvp: PublicRsvp;
 }) {
   const weekday = weekdayName(event.starts_at);
-  const counts = rsvp.attending === 1 ? countSummary(event, rsvp) : "";
+  const counts = rsvp.attending === 1 || rsvp.attending === 2 ? countSummary(event, rsvp) : "";
   if (invitee.family) {
     return (
       <div>
@@ -86,7 +89,7 @@ function Answer({
     return (
       <div>
         <h2>You might come.</h2>
-        <p className="lede">We&apos;ll let {hostName} know.</p>
+        {counts ? <p className="lede">{counts}</p> : <p className="lede">We&apos;ll let {hostName} know.</p>}
       </div>
     );
   }
