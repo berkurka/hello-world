@@ -45,7 +45,7 @@ export default async function Home({
             No account to start. Create the party, share a link, and see who is coming.
           </p>
           <p className="cta-row" style={{ marginTop: "1.1rem" }}>
-            <a className="btn" href="#create">
+            <a className="btn" id="hero-create" href="#create">
               Create an invite
             </a>
           </p>

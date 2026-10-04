@@ -50,7 +50,7 @@ function OgInviteCard({
   const tokens = themeById(theme);
   const scale = height / INVITE_CARD_HEIGHT;
   const px = (value: number) => Math.round(value * scale);
-  const titleSize = px(title.length > 36 ? 64 : title.length > 22 ? 76 : 92);
+  const titleSize = px(title.length > 36 ? 72 : title.length > 22 ? 88 : 108);
   const font = displayFontFamily(tokens.display);
   const pad = px(28);
   const innerW = width - pad * 2;
@@ -96,7 +96,9 @@ function OgInviteCard({
           style={{
             display: "flex",
             flexDirection: "column",
-            padding: `${px(28)}px ${px(48)}px ${px(32)}px`,
+            flexGrow: 1,
+            justifyContent: "center",
+            padding: `${px(32)}px ${px(48)}px`,
           }}
         >
           <div
@@ -141,9 +143,9 @@ function OgInviteCard({
             style={{
               display: "flex",
               color: tokens.ink,
-              fontSize: px(30),
+              fontSize: px(40),
               fontWeight: 600,
-              marginTop: px(18),
+              marginTop: px(22),
             }}
           >
             {when}

@@ -102,6 +102,7 @@ export function EventForm({
   children,
 }: Props) {
   const initial = splitStarts(event, draft);
+  const isCreate = !event;
   const [title, setTitle] = useState(draft?.title ?? event?.title ?? "");
   const [location, setLocation] = useState(draft?.location ?? event?.location ?? "");
   const [notes, setNotes] = useState(event?.notes ?? "");
@@ -118,6 +119,7 @@ export function EventForm({
   const [askInfants, setAskInfants] = useState(draft?.askInfants ?? event?.ask_infants === 1);
   const [detailsOpen, setDetailsOpen] = useState(Boolean(event));
   const [tab, setTab] = useState<"edit" | "preview">("edit");
+  const [parkSubmit, setParkSubmit] = useState(isCreate);
   const [error, setError] = useState(initialError ?? "");
   const [invalidKey, setInvalidKey] = useState<FieldKey | "">(
     initialError ? fieldKeyFromMessage(initialError) : "",
@@ -126,7 +128,6 @@ export function EventForm({
   const [photoUrl, setPhotoUrl] = useState<string | null>(event ? partyImagePath(event.id) : null);
   const [photoBroken, setPhotoBroken] = useState(false);
   const [removePhoto, setRemovePhoto] = useState(false);
-  const isCreate = !event;
   const hasImage = Boolean(event?.party_image_mime);
   const valuesRef = useRef({
     title,
@@ -175,6 +176,21 @@ export function EventForm({
     setTab("edit");
     scrollToIssue(invalidKey);
   }, [error, invalidKey, scrollTick]);
+
+  useEffect(() => {
+    if (!isCreate) return;
+    const hero = document.getElementById("hero-create");
+    if (!hero) {
+      setParkSubmit(false);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => setParkSubmit(entry.isIntersecting),
+      { threshold: 0.4 },
+    );
+    observer.observe(hero);
+    return () => observer.disconnect();
+  }, [isCreate]);
 
   useEffect(() => {
     const scrollToCreate = () => {
@@ -487,7 +503,7 @@ export function EventForm({
                 <Switch name="askInfants" label={BABY_LABEL} checked={askInfants} onChange={setAskInfants} />
               </fieldset>
           </div>
-          <div className="sticky-submit">
+          <div className={parkSubmit ? "sticky-submit is-parked" : "sticky-submit"}>
             <SubmitButton className="block" label={submitLabel} pendingLabel="Saving…" />
           </div>
         </div>
