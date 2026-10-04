@@ -5,8 +5,8 @@ import { Flash } from "@/app/components/flash";
 import { HostPartySettings } from "@/app/components/host-party-settings";
 import { rsvpUrl } from "@/lib/app-url";
 import { listInvitees } from "@/lib/db";
-import { attendingLabel, formatWhen, headcountAttending, normalizeStoredEmail } from "@/lib/format";
-import { authorizeOrganizer, sessionEmailFromToken } from "@/lib/host-login";
+import { attendingLabel, formatWhen, headcountAttending } from "@/lib/format";
+import { authorizeOrganizer, canChangeHostEmail, sessionEmailFromToken } from "@/lib/host-login";
 import { INVITEE_CSV_FILENAME } from "@/lib/invitee-csv";
 import { mailConfigured } from "@/lib/mail";
 import { readHostCreds } from "@/lib/request-auth";
@@ -272,11 +272,8 @@ export default async function ManageEventPage({
         event={event}
         manageToken={manageToken}
         mailOn={canEmail}
-        canChangeEmail={
-          access === "session" &&
-          signedInEmail === normalizeStoredEmail(event.host_email) &&
-          Boolean(signedInEmail)
-        }
+        canChangeEmail={canChangeHostEmail(signedInEmail, event.host_email)}
+        sessionEmail={signedInEmail}
       />
     </main>
   );

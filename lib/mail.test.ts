@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { EventRow, InviteeRow } from "./types";
+import { buildIcs } from "./calendar";
 import { buildInviteMail, hostDisplayName, hostFromHeader, mailConfigFrom, mailConfigured, mailFromHeader, providerErrorMessage } from "./mail";
 
 const resend = {
@@ -111,6 +112,38 @@ test("invite messages reply to the host and preview the party", () => {
     rsvpLink: "https://example.com/rsvp/abc",
   });
   assert.equal(unverified.replyTo, undefined);
+});
+
+test("google and outlook links leave out the rsvp token", () => {
+  const token = "guest-token-secret";
+  const message = buildInviteMail({
+    event: {
+      title: "Maya's 7th Birthday",
+      host_name: "Bernardo",
+      host_email: "host@example.com",
+      host_email_verified_at: "2026-10-04T00:00:00.000Z",
+      starts_at: "2026-10-17T14:00",
+      ends_at: null,
+      location: "Riverside Park",
+      timezone: "America/New_York",
+    } as EventRow,
+    invitee: { display_name: "Priya", token } as InviteeRow,
+    rsvpLink: `https://example.com/rsvp/${token}`,
+  });
+  const calendarLines = message.text.split("\n").filter((line) => line.includes("calendar.google.com") || line.includes("outlook.live.com"));
+  assert.equal(calendarLines.length, 2);
+  for (const line of calendarLines) assert.equal(line.includes(token), false);
+  assert.match(message.text, new RegExp(`/rsvp/${token}/event\\.ics`));
+  const ics = buildIcs({
+    uid: "guest@partyz",
+    title: "Maya's 7th Birthday",
+    startsAt: "2026-10-17T14:00",
+    endsAt: null,
+    timezone: "America/New_York",
+    location: "Riverside Park",
+    description: `RSVP: https://example.com/rsvp/${token}`,
+  });
+  assert.match(ics ?? "", new RegExp(token));
 });
 
 test("provider errors keep the SMTP response text", () => {

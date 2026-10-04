@@ -8,8 +8,10 @@ import { redirect } from "next/navigation";
 export const dynamic = "force-dynamic";
 
 function goingLabel(yes: number, people: number) {
-  if (yes <= 0) return "No one going yet";
-  if (people > 0) return `${yes} going · ${people} ${people === 1 ? "person" : "people"}`;
+  const heads = `${people} ${people === 1 ? "person" : "people"}`;
+  if (yes <= 0 && people <= 0) return "No one going yet";
+  if (yes <= 0) return `${heads} maybe`;
+  if (people > 0) return `${yes} going · ${heads}`;
   return `${yes} going`;
 }
 

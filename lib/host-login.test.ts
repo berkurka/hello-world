@@ -48,14 +48,16 @@ test("client IP prefers the Vercel forwarded address", () => {
   assert.equal(clientIpFromHeaders(new Headers()), "unknown");
 });
 
-test("requestHostEmailChange is allowed only for the signed-in host", () => {
-  assert.equal(canChangeHostEmail("session", "host@example.com", "host@example.com"), true);
-  assert.equal(canChangeHostEmail("session", "Host@Example.com", "host@example.com"), true);
-  assert.equal(canChangeHostEmail("token", "host@example.com", "host@example.com"), false);
-  assert.equal(canChangeHostEmail("device", "host@example.com", "host@example.com"), false);
-  assert.equal(canChangeHostEmail("session", "other@example.com", "host@example.com"), false);
-  assert.equal(canChangeHostEmail("session", null, "host@example.com"), false);
-  assert.equal(canChangeHostEmail("session", "host@example.com", null), false);
+test("host email changes follow the signed-in address, including a dashboard link", () => {
+  assert.equal(canChangeHostEmail("host@example.com", "host@example.com"), true);
+  assert.equal(canChangeHostEmail("host@example.com", "Host@Example.com"), true);
+  assert.equal(canChangeHostEmail("other@example.com", "host@example.com"), false);
+  assert.equal(canChangeHostEmail(null, "host@example.com"), false);
+  assert.equal(canChangeHostEmail("host@example.com", null), true);
+  assert.equal(canChangeHostEmail("host@example.com", null, "host@example.com"), true);
+  assert.equal(canChangeHostEmail("host@example.com", null, "Host@Example.com"), true);
+  assert.equal(canChangeHostEmail("host@example.com", null, "other@example.com"), false);
+  assert.equal(canChangeHostEmail(null, null, "host@example.com"), false);
 });
 
 test("parties split into upcoming and past by wall-clock start", () => {

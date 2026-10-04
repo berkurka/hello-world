@@ -181,17 +181,24 @@ async function ensureSchema() {
     args: [deviceExpiry],
   });
   await db.execute(`CREATE TABLE IF NOT EXISTS schema_flags (name TEXT PRIMARY KEY)`);
-  const maybeFlag = await db.execute({
-    sql: `SELECT name FROM schema_flags WHERE name = ?`,
-    args: ["allow_maybe_existing_off"],
+  await backfillAllowMaybeOff(db);
+}
+
+const ALLOW_MAYBE_EXISTING_OFF = "allow_maybe_existing_off";
+
+async function backfillAllowMaybeOff(db: Client) {
+  const inserted = await db.execute({
+    sql: `INSERT OR IGNORE INTO schema_flags (name) VALUES (?)`,
+    args: [ALLOW_MAYBE_EXISTING_OFF],
   });
-  if (maybeFlag.rows.length === 0) {
-    await db.execute(`UPDATE events SET allow_maybe = 0`);
-    await db.execute({
-      sql: `INSERT INTO schema_flags (name) VALUES (?)`,
-      args: ["allow_maybe_existing_off"],
-    });
-  }
+  if (Number(inserted.rowsAffected) !== 1) return false;
+  await db.execute(`UPDATE events SET allow_maybe = 0`);
+  return true;
+}
+
+export async function applyAllowMaybeBackfill() {
+  const db = await readyDb();
+  return backfillAllowMaybeOff(db);
 }
 
 export async function readyDb() {

@@ -40,13 +40,18 @@ export function clientIpFromHeaders(h: { get(name: string): string | null }) {
 }
 
 export function canChangeHostEmail(
-  access: HostAccess,
   sessionEmail: string | null,
   hostEmail: string | null,
+  nextEmail?: string | null,
 ) {
   const session = normalizeStoredEmail(sessionEmail);
+  if (!session) return false;
   const host = normalizeStoredEmail(hostEmail);
-  return access === "session" && Boolean(session) && session === host;
+  if (!host) {
+    if (nextEmail === undefined) return true;
+    return normalizeStoredEmail(nextEmail) === session;
+  }
+  return session === host;
 }
 
 export function splitByStart<T extends { starts_at: string }>(events: T[], now = new Date()) {
@@ -162,7 +167,7 @@ export async function redeemHostLogin(rawToken: string) {
   );
   if (Number(result.rowsAffected) !== 1) return null;
   await run(
-    `UPDATE events SET host_email_verified_at = ? WHERE host_email = ? AND host_email_verified_at IS NULL`,
+    `UPDATE events SET host_email_verified_at = ? WHERE lower(host_email) = lower(?) AND host_email_verified_at IS NULL`,
     [now, row.email],
   );
   return row.email;
@@ -202,20 +207,23 @@ export async function deleteSession(rawToken: string | null) {
 }
 
 export function listEventsForHost(email: string) {
-  return query<EventRow>(`SELECT * FROM events WHERE host_email = ? ORDER BY starts_at ASC`, [email]);
+  return query<EventRow>(
+    `SELECT * FROM events WHERE lower(host_email) = lower(?) ORDER BY starts_at ASC`,
+    [email],
+  );
 }
 
 export function listHostParties(email: string) {
   return query<HostParty>(
     `SELECT e.*,
             COALESCE(SUM(CASE WHEN r.attending = 1 THEN 1 ELSE 0 END), 0) AS yes_count,
-            COALESCE(SUM(CASE WHEN r.attending = 1 THEN
+            COALESCE(SUM(CASE WHEN r.attending = 1 OR (r.attending = 2 AND e.allow_maybe != 0) THEN
               COALESCE(r.adults, 0) + COALESCE(r.kids, 0) + COALESCE(r.infants, 0)
               ELSE 0 END), 0) AS people
      FROM events e
      LEFT JOIN invitees i ON i.event_id = e.id
      LEFT JOIN rsvps r ON r.invitee_id = i.id
-     WHERE e.host_email = ?
+     WHERE lower(e.host_email) = lower(?)
      GROUP BY e.id
      ORDER BY e.starts_at ASC`,
     [email],
@@ -337,6 +345,17 @@ export async function issueEmailChange(eventId: string, newEmail: string, previo
   return { ok: true as const, token };
 }
 
+export async function attachHostEmail(eventId: string, email: string) {
+  const normalized = normalizeStoredEmail(email);
+  if (!normalized) return false;
+  const updated = await run(
+    `UPDATE events SET host_email = ?, host_email_verified_at = ?
+     WHERE id = ? AND (host_email IS NULL OR trim(host_email) = '')`,
+    [normalized, new Date().toISOString(), eventId],
+  );
+  return Number(updated.rowsAffected) === 1;
+}
+
 export async function revokeEmailChangeToken(rawToken: string) {
   if (!rawToken) return;
   await run(`UPDATE host_email_changes SET used_at = ? WHERE token_hash = ? AND used_at IS NULL`, [
@@ -393,11 +412,12 @@ export async function redeemEmailChange(rawToken: string) {
   const previous = normalizeStoredEmail(row.previous_email);
   const updated = previous
     ? await run(
-        `UPDATE events SET host_email = ?, host_email_verified_at = ? WHERE id = ? AND host_email = ?`,
+        `UPDATE events SET host_email = ?, host_email_verified_at = ? WHERE id = ? AND lower(host_email) = lower(?)`,
         [row.new_email, now, row.event_id, previous],
       )
     : await run(
-        `UPDATE events SET host_email = ?, host_email_verified_at = ? WHERE id = ? AND host_email IS NULL`,
+        `UPDATE events SET host_email = ?, host_email_verified_at = ?
+         WHERE id = ? AND (host_email IS NULL OR trim(host_email) = '')`,
         [row.new_email, now, row.event_id],
       );
   if (Number(updated.rowsAffected) !== 1) return null;

@@ -18,6 +18,7 @@ import {
 } from "@/lib/db";
 import { asBool, asCount, isEmail, normalizeStoredEmail, parseAttending, storesHeadcount } from "@/lib/format";
 import {
+  attachHostEmail,
   authorizeOrganizer,
   canChangeHostEmail,
   deleteSession,
@@ -481,14 +482,30 @@ export async function requestHostEmailChange(formData: FormData) {
   const creds = await readHostCreds();
   const { event, access } = await requireOrganizer(formData);
   const sessionEmail = await sessionEmailFromToken(creds.sessionToken);
-  if (!canChangeHostEmail(access, sessionEmail, event.host_email)) {
-    redirect(
-      managePath(event, { error: "Sign in from the current host email to change it." }, access),
-    );
-  }
   const email = normalizeStoredEmail(required(formData, "email"));
   if (!email || !isEmail(email)) {
     redirect(managePath(event, { error: "Enter a valid email." }, access));
+  }
+  if (!canChangeHostEmail(sessionEmail, event.host_email, email)) {
+    redirect(
+      managePath(
+        event,
+        {
+          error: normalizeStoredEmail(event.host_email)
+            ? "Sign in from the current host email to change it."
+            : "Sign in as that email to add it.",
+        },
+        access,
+      ),
+    );
+  }
+  if (!normalizeStoredEmail(event.host_email)) {
+    const attached = await attachHostEmail(event.id, email);
+    if (!attached) {
+      redirect(managePath(event, { error: "This party already has a host email." }, access));
+    }
+    revalidatePath(`/e/${event.id}/manage`);
+    redirect(managePath(event, { notice: "Recovery email saved." }, access));
   }
   if (email === normalizeStoredEmail(event.host_email)) {
     redirect(managePath(event, { error: "That is already the host email." }, access));
@@ -542,7 +559,7 @@ export async function confirmHostEmail(formData: FormData) {
 }
 
 export async function resetDashboardLink(formData: FormData) {
-  const { event, access } = await requireOrganizer(formData);
+  const { event } = await requireOrganizer(formData);
   const adminToken = await rotateDashboardSecrets(event.id);
   if (!adminToken) throw new Error("Event not found");
   revalidatePath(`/e/${event.id}/manage`);
@@ -550,7 +567,7 @@ export async function resetDashboardLink(formData: FormData) {
     managePath(
       { id: event.id, admin_token: adminToken },
       { notice: "Dashboard link reset. Old links no longer work." },
-      access,
+      "token",
     ),
   );
 }

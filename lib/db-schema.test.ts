@@ -123,6 +123,26 @@ test("startup migration adds missing host and email2 columns and keeps old invit
   );
   assert.equal((await access.listEventsForHost("other@example.com")).length, 0);
 
+  await db.run(`UPDATE events SET allow_maybe = 1 WHERE id = ?`, ["e1"]);
+  assert.equal(await db.applyAllowMaybeBackfill(), false);
+  assert.equal((await db.getEvent("e1"))?.allow_maybe, 1);
+  assert.equal((await db.getEvent("e2"))?.allow_maybe, 1);
+
+  const guest = await db.queryOne<{ id: string }>(
+    "SELECT id FROM invitees WHERE display_name = ?",
+    ["The New family"],
+  );
+  await db.run(
+    `INSERT INTO rsvps (id, invitee_id, attending, adults, kids, infants, updated_at) VALUES (?, ?, 2, 2, 1, 0, ?)`,
+    ["rsvp-maybe", guest?.id ?? "", "2026-01-02T00:00:00.000Z"],
+  );
+  const withMaybe = await access.listHostParties("host@example.com");
+  assert.equal(Number(withMaybe.find((party) => party.id === "e1")?.yes_count), 0);
+  assert.equal(Number(withMaybe.find((party) => party.id === "e1")?.people), 3);
+  await db.run(`UPDATE events SET allow_maybe = 0 WHERE id = ?`, ["e1"]);
+  const withoutMaybe = await access.listHostParties("host@example.com");
+  assert.equal(Number(withoutMaybe.find((party) => party.id === "e1")?.people), 0);
+
   const first = await access.issueHostLogin("host@example.com", "203.0.113.4");
   assert.equal(first.status, "sent");
   if (first.status !== "sent") return;
@@ -184,8 +204,18 @@ test("startup migration adds missing host and email2 columns and keeps old invit
     await access.authorizeOrganizer("e2", null, { sessionToken: otherSession, deviceToken: null }),
     null,
   );
-  assert.equal(access.canChangeHostEmail("token", "host@example.com", "host@example.com"), false);
-  assert.equal(access.canChangeHostEmail("session", "host@example.com", "host@example.com"), true);
+  assert.equal(access.canChangeHostEmail("host@example.com", "Host@Example.com"), true);
+  assert.equal(access.canChangeHostEmail("other@example.com", "host@example.com"), false);
+  await db.run(`UPDATE events SET host_email = ? WHERE id = ?`, ["Host@Example.com", "e1"]);
+  assert.deepEqual(
+    (await access.listEventsForHost("host@example.com")).map((event) => event.id),
+    ["e1", "e2"],
+  );
+  await db.run(`UPDATE events SET host_email = NULL WHERE id = ?`, ["e1"]);
+  assert.equal(await access.attachHostEmail("e1", "Host@Example.com"), true);
+  assert.equal((await db.getEvent("e1"))?.host_email, "host@example.com");
+  assert.ok((await db.getEvent("e1"))?.host_email_verified_at);
+  assert.equal(await access.attachHostEmail("e1", "other@example.com"), false);
 
   const device = "device-token";
   await access.grantDevice("e1", device);
