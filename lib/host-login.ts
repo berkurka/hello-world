@@ -32,10 +32,21 @@ export function withinLoginLimits(emailCount: number, ipCount: number) {
 }
 
 export function clientIpFromHeaders(h: { get(name: string): string | null }) {
+  const vercel = h.get("x-vercel-forwarded-for");
   const forwarded = h.get("x-forwarded-for");
-  const raw = (forwarded?.split(",")[0] || h.get("x-real-ip") || "").trim();
+  const raw = (vercel?.split(",")[0] || forwarded?.split(",")[0] || h.get("x-real-ip") || "").trim();
   const cleaned = raw.replace(/[^0-9a-fA-F.:]/g, "").slice(0, 64);
   return cleaned || "unknown";
+}
+
+export function canChangeHostEmail(
+  access: HostAccess,
+  sessionEmail: string | null,
+  hostEmail: string | null,
+) {
+  const session = normalizeStoredEmail(sessionEmail);
+  const host = normalizeStoredEmail(hostEmail);
+  return access === "session" && Boolean(session) && session === host;
 }
 
 export function splitByStart<T extends { starts_at: string }>(events: T[], now = new Date()) {
@@ -55,23 +66,54 @@ async function countOf(sql: string, args: (string | number | null)[]) {
   return Number(row?.n ?? 0);
 }
 
-export async function createLoginToken(email: string, purpose: "login" | "create", ip: string) {
+export async function pruneExpiredHostRows(now = new Date()) {
+  const cutoff = new Date(now.getTime() - LOGIN_WINDOW_MS).toISOString();
+  const instant = now.toISOString();
+  await run(`DELETE FROM host_login_tokens WHERE created_at < ?`, [cutoff]);
+  await run(`DELETE FROM host_email_changes WHERE created_at < ?`, [cutoff]);
+  await run(`DELETE FROM host_sessions WHERE expires_at <= ?`, [instant]);
+  await run(`DELETE FROM host_device_grants WHERE expires_at IS NOT NULL AND expires_at <= ?`, [instant]);
+}
+
+export type IssuedToken = { status: "issued"; token: string } | { status: "limited" };
+
+export async function issueLoginToken(
+  email: string,
+  purpose: "login" | "create",
+  ip: string,
+): Promise<IssuedToken> {
+  await pruneExpiredHostRows();
   const token = newToken();
   const now = new Date();
-  await run(
+  const since = new Date(now.getTime() - LOGIN_WINDOW_MS).toISOString();
+  const hash = hashToken(token);
+  const inserted = await run(
     `INSERT INTO host_login_tokens (id, email, token_hash, expires_at, used_at, created_at, request_ip, purpose)
-     VALUES (?, ?, ?, ?, NULL, ?, ?, ?)`,
+     SELECT ?, ?, ?, ?, NULL, ?, ?, ?
+     WHERE (SELECT COUNT(*) FROM host_login_tokens WHERE email = ? AND created_at >= ?) < ?
+       AND (SELECT COUNT(*) FROM host_login_tokens WHERE request_ip = ? AND created_at >= ?) < ?`,
     [
       newId(),
       email,
-      hashToken(token),
+      hash,
       new Date(now.getTime() + LOGIN_TTL_MS).toISOString(),
       now.toISOString(),
       ip,
       purpose,
+      email,
+      since,
+      LOGIN_EMAIL_LIMIT,
+      ip,
+      since,
+      LOGIN_IP_LIMIT,
     ],
   );
-  return token;
+  if (Number(inserted.rowsAffected) !== 1) return { status: "limited" };
+  await run(
+    `UPDATE host_login_tokens SET used_at = ? WHERE email = ? AND used_at IS NULL AND token_hash != ?`,
+    [now.toISOString(), email, hash],
+  );
+  return { status: "issued", token };
 }
 
 export type LoginIssue =
@@ -80,20 +122,11 @@ export type LoginIssue =
   | { status: "limited" };
 
 export async function issueHostLogin(email: string, ip: string): Promise<LoginIssue> {
-  const since = new Date(Date.now() - LOGIN_WINDOW_MS).toISOString();
-  const emailCount = await countOf(
-    `SELECT COUNT(*) AS n FROM host_login_tokens WHERE email = ? AND purpose = 'login' AND created_at >= ?`,
-    [email, since],
-  );
-  const ipCount = await countOf(
-    `SELECT COUNT(*) AS n FROM host_login_tokens WHERE request_ip = ? AND purpose = 'login' AND created_at >= ?`,
-    [ip, since],
-  );
-  if (!withinLoginLimits(emailCount, ipCount)) return { status: "limited" };
   const events = await listEventsForHost(email);
-  const token = await createLoginToken(email, "login", ip);
+  const issued = await issueLoginToken(email, "login", ip);
+  if (issued.status === "limited") return { status: "limited" };
   if (events.length === 0) return { status: "skipped" };
-  return { status: "sent", token, titles: events.map((event) => event.title) };
+  return { status: "sent", token: issued.token, titles: events.map((event) => event.title) };
 }
 
 type TokenRow = {
@@ -128,6 +161,10 @@ export async function redeemHostLogin(rawToken: string) {
     [now, row.id],
   );
   if (Number(result.rowsAffected) !== 1) return null;
+  await run(
+    `UPDATE events SET host_email_verified_at = ? WHERE host_email = ? AND host_email_verified_at IS NULL`,
+    [now, row.email],
+  );
   return row.email;
 }
 
@@ -185,26 +222,44 @@ export function listHostParties(email: string) {
   );
 }
 
+function deviceExpiry(now = new Date()) {
+  return new Date(now.getTime() + DEVICE_MAX_AGE_SECONDS * 1000).toISOString();
+}
+
 export async function grantDevice(eventId: string, rawToken: string) {
   const hash = hashToken(rawToken);
+  const expiresAt = deviceExpiry();
   const existing = await queryOne<{ id: string }>(
     `SELECT id FROM host_device_grants WHERE event_id = ? AND token_hash = ?`,
     [eventId, hash],
   );
-  if (existing) return;
+  if (existing) {
+    await run(`UPDATE host_device_grants SET expires_at = ? WHERE id = ?`, [expiresAt, existing.id]);
+    return;
+  }
   await run(
-    `INSERT INTO host_device_grants (id, event_id, token_hash, created_at) VALUES (?, ?, ?, ?)`,
-    [newId(), eventId, hash, new Date().toISOString()],
+    `INSERT INTO host_device_grants (id, event_id, token_hash, created_at, expires_at) VALUES (?, ?, ?, ?, ?)`,
+    [newId(), eventId, hash, new Date().toISOString(), expiresAt],
   );
 }
 
 export async function deviceAllows(eventId: string, rawToken: string | null) {
   if (!rawToken) return false;
-  const row = await queryOne<{ id: string }>(
-    `SELECT id FROM host_device_grants WHERE event_id = ? AND token_hash = ?`,
+  const row = await queryOne<{ expires_at: string | null }>(
+    `SELECT expires_at FROM host_device_grants WHERE event_id = ? AND token_hash = ?`,
     [eventId, hashToken(rawToken)],
   );
-  return Boolean(row);
+  if (!row?.expires_at) return false;
+  return Date.parse(row.expires_at) > Date.now();
+}
+
+export async function revokeDeviceGrantsForEvent(eventId: string) {
+  await run(`DELETE FROM host_device_grants WHERE event_id = ?`, [eventId]);
+}
+
+export async function revokeDeviceToken(rawToken: string | null) {
+  if (!rawToken) return;
+  await run(`DELETE FROM host_device_grants WHERE token_hash = ?`, [hashToken(rawToken)]);
 }
 
 export async function authorizeOrganizer(
@@ -226,18 +281,33 @@ export async function authorizeOrganizer(
   return null;
 }
 
+async function retireEmailChanges(eventId: string, now: string, exceptId: string | null = null) {
+  if (exceptId) {
+    await run(
+      `UPDATE host_email_changes SET used_at = ? WHERE event_id = ? AND used_at IS NULL AND id != ?`,
+      [now, eventId, exceptId],
+    );
+    return;
+  }
+  await run(`UPDATE host_email_changes SET used_at = ? WHERE event_id = ? AND used_at IS NULL`, [now, eventId]);
+}
+
 export async function rotateDashboardSecrets(eventId: string) {
   const adminToken = newToken();
   const claimToken = newToken();
+  const now = new Date().toISOString();
   const result = await run(
     `UPDATE events SET admin_token = ?, host_claim_token = ?, host_claimed_at = NULL WHERE id = ?`,
     [adminToken, claimToken, eventId],
   );
   if (Number(result.rowsAffected) !== 1) return null;
+  await retireEmailChanges(eventId, now);
+  await revokeDeviceGrantsForEvent(eventId);
   return adminToken;
 }
 
-export async function issueEmailChange(eventId: string, newEmail: string) {
+export async function issueEmailChange(eventId: string, newEmail: string, previousEmail: string | null) {
+  await pruneExpiredHostRows();
   const since = new Date(Date.now() - LOGIN_WINDOW_MS).toISOString();
   const recent = await countOf(
     `SELECT COUNT(*) AS n FROM host_email_changes WHERE event_id = ? AND created_at >= ?`,
@@ -246,27 +316,40 @@ export async function issueEmailChange(eventId: string, newEmail: string) {
   if (recent >= EMAIL_CHANGE_LIMIT) {
     return { ok: false as const, error: "Too many confirmation emails. Try again in an hour." };
   }
-  const token = newToken();
   const now = new Date();
+  const nowIso = now.toISOString();
+  await retireEmailChanges(eventId, nowIso);
+  const token = newToken();
   await run(
-    `INSERT INTO host_email_changes (id, event_id, new_email, token_hash, expires_at, used_at, created_at)
-     VALUES (?, ?, ?, ?, ?, NULL, ?)`,
+    `INSERT INTO host_email_changes (
+      id, event_id, new_email, previous_email, token_hash, expires_at, used_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)`,
     [
       newId(),
       eventId,
       newEmail,
+      normalizeStoredEmail(previousEmail),
       hashToken(token),
       new Date(now.getTime() + LOGIN_TTL_MS).toISOString(),
-      now.toISOString(),
+      nowIso,
     ],
   );
   return { ok: true as const, token };
+}
+
+export async function revokeEmailChangeToken(rawToken: string) {
+  if (!rawToken) return;
+  await run(`UPDATE host_email_changes SET used_at = ? WHERE token_hash = ? AND used_at IS NULL`, [
+    new Date().toISOString(),
+    hashToken(rawToken),
+  ]);
 }
 
 type EmailChangeRow = {
   id: string;
   event_id: string;
   new_email: string;
+  previous_email: string | null;
   expires_at: string;
   used_at: string | null;
 };
@@ -274,7 +357,8 @@ type EmailChangeRow = {
 async function openEmailChange(rawToken: string) {
   if (!rawToken) return null;
   const row = await queryOne<EmailChangeRow>(
-    `SELECT id, event_id, new_email, expires_at, used_at FROM host_email_changes WHERE token_hash = ?`,
+    `SELECT id, event_id, new_email, previous_email, expires_at, used_at
+     FROM host_email_changes WHERE token_hash = ?`,
     [hashToken(rawToken)],
   );
   if (!row || row.used_at) return null;
@@ -282,24 +366,40 @@ async function openEmailChange(rawToken: string) {
   return row;
 }
 
+function hostEmailMatches(current: string | null, previous: string | null) {
+  return normalizeStoredEmail(current) === normalizeStoredEmail(previous);
+}
+
 export async function peekEmailChange(rawToken: string) {
   const row = await openEmailChange(rawToken);
   if (!row) return null;
   const event = await getEvent(row.event_id);
-  if (!event) return null;
+  if (!event || !hostEmailMatches(event.host_email, row.previous_email)) return null;
   return { email: row.new_email, eventId: event.id, title: event.title };
 }
 
 export async function redeemEmailChange(rawToken: string) {
   const row = await openEmailChange(rawToken);
   if (!row) return null;
+  const event = await getEvent(row.event_id);
   const now = new Date().toISOString();
   const marked = await run(
     `UPDATE host_email_changes SET used_at = ? WHERE id = ? AND used_at IS NULL`,
     [now, row.id],
   );
   if (Number(marked.rowsAffected) !== 1) return null;
-  const updated = await run(`UPDATE events SET host_email = ? WHERE id = ?`, [row.new_email, row.event_id]);
+  await retireEmailChanges(row.event_id, now, row.id);
+  if (!event || !hostEmailMatches(event.host_email, row.previous_email)) return null;
+  const previous = normalizeStoredEmail(row.previous_email);
+  const updated = previous
+    ? await run(
+        `UPDATE events SET host_email = ?, host_email_verified_at = ? WHERE id = ? AND host_email = ?`,
+        [row.new_email, now, row.event_id, previous],
+      )
+    : await run(
+        `UPDATE events SET host_email = ?, host_email_verified_at = ? WHERE id = ? AND host_email IS NULL`,
+        [row.new_email, now, row.event_id],
+      );
   if (Number(updated.rowsAffected) !== 1) return null;
   return { eventId: row.event_id, email: row.new_email };
 }

@@ -25,6 +25,11 @@ export async function clearSessionCookie() {
   jar.set(SESSION_COOKIE, "", { ...sessionCookieOptions(), maxAge: 0 });
 }
 
+export async function clearDeviceCookie() {
+  const jar = await cookies();
+  jar.set(DEVICE_COOKIE, "", { ...deviceCookieOptions(), maxAge: 0 });
+}
+
 export async function rememberCreatedParty(eventId: string) {
   const jar = await cookies();
   let token = jar.get(DEVICE_COOKIE)?.value;

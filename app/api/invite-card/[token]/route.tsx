@@ -1,7 +1,7 @@
 import { getEvent, getEventImageDataUrl, getInviteeByToken } from "@/lib/db";
 import { formatWhen } from "@/lib/format";
 import { inviteCardImage } from "@/lib/invite-card";
-import { versionedCacheControl } from "@/lib/party-share";
+import { eventVersion, versionedCacheControl } from "@/lib/party-share";
 
 export const runtime = "nodejs";
 
@@ -27,6 +27,7 @@ export async function GET(
     },
     url.searchParams.get("size") === "og" ? "og" : "card",
   );
-  image.headers.set("Cache-Control", versionedCacheControl(url.searchParams.has("v")));
+  image.headers.set("Cache-Control", versionedCacheControl(url.searchParams.get("v") === eventVersion(event)));
+  image.headers.set("X-Robots-Tag", "noindex");
   return image;
 }

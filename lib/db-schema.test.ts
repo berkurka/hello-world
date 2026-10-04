@@ -71,7 +71,7 @@ test("startup migration adds missing host and email2 columns and keeps old invit
     "SELECT allow_maybe, updated_at FROM events WHERE id = ?",
     ["e1"],
   );
-  assert.equal(migrated?.allow_maybe, 1);
+  assert.equal(migrated?.allow_maybe, 0);
   assert.equal(migrated?.updated_at, null);
 
   const old = await db.query<{ email: string; email2: string | null }>(
@@ -133,32 +133,89 @@ test("startup migration adds missing host and email2 columns and keeps old invit
   await access.issueHostLogin("host@example.com", "203.0.113.4");
   const limited = await access.issueHostLogin("host@example.com", "203.0.113.9");
   assert.equal(limited.status, "limited");
+  const createLimited = await access.issueLoginToken("host@example.com", "create", "198.51.100.8");
+  assert.equal(createLimited.status, "limited");
 
-  assert.equal(await access.peekLoginToken(first.token), "host@example.com");
-  assert.equal(await access.redeemHostLogin(first.token), "host@example.com");
-  assert.equal(await access.redeemHostLogin(first.token), null);
+  const fresh = await access.issueLoginToken("fresh@example.com", "create", "198.51.100.20");
+  assert.equal(fresh.status, "issued");
+  if (fresh.status !== "issued") return;
+  const replaced = await access.issueLoginToken("fresh@example.com", "login", "198.51.100.21");
+  assert.equal(replaced.status, "issued");
+  if (replaced.status !== "issued") return;
+  assert.equal(await access.peekLoginToken(fresh.token), null);
+  assert.equal(await access.peekLoginToken(replaced.token), "fresh@example.com");
+
+  const burst = await Promise.all(
+    Array.from({ length: 5 }, () => access.issueLoginToken("burst@example.com", "login", "192.0.2.10")),
+  );
+  assert.equal(burst.filter((row) => row.status === "issued").length, 3);
+
+  assert.equal(await access.peekLoginToken(first.token), null);
+  const singleUse = await access.issueLoginToken("once@example.com", "login", "192.0.2.40");
+  assert.equal(singleUse.status, "issued");
+  if (singleUse.status !== "issued") return;
+  const raced = await Promise.all([
+    access.redeemHostLogin(singleUse.token),
+    access.redeemHostLogin(singleUse.token),
+  ]);
+  assert.deepEqual(raced.filter(Boolean), ["once@example.com"]);
+
+  const openAgain = await access.issueLoginToken("host@example.com", "login", "203.0.113.40");
+  assert.equal(openAgain.status, "limited");
+  await db.run(`DELETE FROM host_login_tokens WHERE email = ?`, ["host@example.com"]);
+  const reopened = await access.issueHostLogin("host@example.com", "203.0.113.41");
+  assert.equal(reopened.status, "sent");
+  if (reopened.status !== "sent") return;
+  assert.equal(await access.redeemHostLogin(reopened.token), "host@example.com");
+  assert.ok((await db.getEvent("e1"))?.host_email_verified_at);
+  assert.equal(await access.redeemHostLogin(reopened.token), null);
 
   const session = await access.startSession("host@example.com");
   assert.equal(await access.sessionEmailFromToken(session), "host@example.com");
   const authed = await access.authorizeOrganizer("e2", null, { sessionToken: session, deviceToken: null });
   assert.equal(authed?.access, "session");
   assert.equal(authed?.event.id, "e2");
+  const byToken = await access.authorizeOrganizer("e2", "admin-2", { sessionToken: null, deviceToken: null });
+  assert.equal(byToken?.access, "token");
+  const fallthrough = await access.authorizeOrganizer("e2", "nope", { sessionToken: session, deviceToken: null });
+  assert.equal(fallthrough?.access, "session");
+  const otherSession = await access.startSession("other@example.com");
   assert.equal(
-    (await access.authorizeOrganizer("e2", "nope", { sessionToken: null, deviceToken: null })),
+    await access.authorizeOrganizer("e2", null, { sessionToken: otherSession, deviceToken: null }),
     null,
   );
+  assert.equal(access.canChangeHostEmail("token", "host@example.com", "host@example.com"), false);
+  assert.equal(access.canChangeHostEmail("session", "host@example.com", "host@example.com"), true);
 
   const device = "device-token";
   await access.grantDevice("e1", device);
   const onDevice = await access.authorizeOrganizer("e1", null, { sessionToken: null, deviceToken: device });
   assert.equal(onDevice?.access, "device");
+  const pending = await access.issueEmailChange("e1", "takeover@example.com", "host@example.com");
+  assert.equal(pending.ok, true);
+  if (!pending.ok) return;
 
   const rotated = await access.rotateDashboardSecrets("e1");
   assert.ok(rotated);
   assert.equal(await db.getEventForOrganizer("e1", "admin-token"), null);
   assert.equal((await db.getEventForOrganizer("e1", rotated!))?.id, "e1");
+  assert.equal(await access.deviceAllows("e1", device), false);
+  assert.equal(await access.peekEmailChange(pending.token), null);
+  assert.equal(await access.redeemEmailChange(pending.token), null);
 
-  const change = await access.issueEmailChange("e2", "new-host@example.com");
+  const stale = await access.issueEmailChange("e2", "new-host@example.com", "host@example.com");
+  assert.equal(stale.ok, true);
+  if (!stale.ok) return;
+  const newer = await access.issueEmailChange("e2", "later@example.com", "host@example.com");
+  assert.equal(newer.ok, true);
+  if (!newer.ok) return;
+  assert.equal(await access.peekEmailChange(stale.token), null);
+  await db.run(`UPDATE events SET host_email = ? WHERE id = ?`, ["someone-else@example.com", "e2"]);
+  assert.equal(await access.redeemEmailChange(newer.token), null);
+  assert.equal((await db.getEvent("e2"))?.host_email, "someone-else@example.com");
+
+  await db.run(`UPDATE events SET host_email = ? WHERE id = ?`, ["host@example.com", "e2"]);
+  const change = await access.issueEmailChange("e2", "new-host@example.com", "host@example.com");
   assert.equal(change.ok, true);
   if (!change.ok) return;
   const peeked = await access.peekEmailChange(change.token);
@@ -166,6 +223,7 @@ test("startup migration adds missing host and email2 columns and keeps old invit
   const redeemed = await access.redeemEmailChange(change.token);
   assert.equal(redeemed?.email, "new-host@example.com");
   assert.equal((await db.getEvent("e2"))?.host_email, "new-host@example.com");
+  assert.ok((await db.getEvent("e2"))?.host_email_verified_at);
   assert.equal(await access.redeemEmailChange(change.token), null);
 
   rmSync(dir, { recursive: true, force: true });

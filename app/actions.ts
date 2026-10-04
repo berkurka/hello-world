@@ -19,13 +19,17 @@ import {
 import { asBool, asCount, isEmail, normalizeStoredEmail, parseAttending, storesHeadcount } from "@/lib/format";
 import {
   authorizeOrganizer,
-  createLoginToken,
+  canChangeHostEmail,
   deleteSession,
   issueEmailChange,
   issueHostLogin,
+  issueLoginToken,
   redeemEmailChange,
   redeemHostLogin,
+  revokeDeviceToken,
+  revokeEmailChangeToken,
   rotateDashboardSecrets,
+  sessionEmailFromToken,
   startSession,
   type HostAccess,
 } from "@/lib/host-login";
@@ -38,14 +42,17 @@ import {
   summarizeInviteeImport,
 } from "@/lib/invitee-csv";
 import {
+  GENERIC_MAIL_ERROR,
   mailConfigured,
   providerErrorMessage,
   sendHostEmailChangeEmail,
+  sendHostEmailChangeNotice,
   sendHostSignInEmail,
   sendInviteEmail,
 } from "@/lib/mail";
 import { inspectPartyImage } from "@/lib/party-image";
 import {
+  clearDeviceCookie,
   clearSessionCookie,
   readClientIp,
   readHostCreds,
@@ -173,26 +180,28 @@ export async function createEvent(formData: FormData) {
   await rememberCreatedParty(id);
 
   let mail: "sent" | "skipped" | "failed" = "skipped";
-  let mailError = "";
   if (mailConfigured()) {
-    try {
-      const token = await createLoginToken(hostEmail, "create", await readClientIp());
-      await sendHostSignInEmail({
-        to: hostEmail,
-        link: hostLoginUrl(token),
-        hostName: fields.hostName,
-        titles: [fields.title],
-        kind: "create",
-      });
-      mail = "sent";
-    } catch (err) {
+    const issued = await issueLoginToken(hostEmail, "create", await readClientIp());
+    if (issued.status === "limited") {
       mail = "failed";
-      mailError = providerErrorMessage(err);
+    } else {
+      try {
+        await sendHostSignInEmail({
+          to: hostEmail,
+          link: hostLoginUrl(issued.token),
+          hostName: fields.hostName,
+          titles: [fields.title],
+          kind: "create",
+        });
+        mail = "sent";
+      } catch (err) {
+        console.error("host create email failed", providerErrorMessage(err));
+        mail = "failed";
+      }
     }
   }
 
   const created = new URLSearchParams({ t: adminToken, mail });
-  if (mailError) created.set("mailError", mailError);
   redirect(`/e/${id}/created?${created.toString()}`);
 }
 
@@ -462,12 +471,21 @@ export async function consumeHostLogin(formData: FormData) {
 export async function signOutHost() {
   const creds = await readHostCreds();
   await deleteSession(creds.sessionToken);
+  await revokeDeviceToken(creds.deviceToken);
   await clearSessionCookie();
+  await clearDeviceCookie();
   redirect("/");
 }
 
 export async function requestHostEmailChange(formData: FormData) {
+  const creds = await readHostCreds();
   const { event, access } = await requireOrganizer(formData);
+  const sessionEmail = await sessionEmailFromToken(creds.sessionToken);
+  if (!canChangeHostEmail(access, sessionEmail, event.host_email)) {
+    redirect(
+      managePath(event, { error: "Sign in from the current host email to change it." }, access),
+    );
+  }
   const email = normalizeStoredEmail(required(formData, "email"));
   if (!email || !isEmail(email)) {
     redirect(managePath(event, { error: "Enter a valid email." }, access));
@@ -478,8 +496,20 @@ export async function requestHostEmailChange(formData: FormData) {
   if (!mailConfigured()) {
     redirect(managePath(event, { error: "Email is not set up, so the host email can't be changed." }, access));
   }
-  const issued = await issueEmailChange(event.id, email);
+  const issued = await issueEmailChange(event.id, email, event.host_email);
   if (!issued.ok) redirect(managePath(event, { error: issued.error }, access));
+  const oldEmail = normalizeStoredEmail(event.host_email);
+  if (oldEmail) {
+    try {
+      await sendHostEmailChangeNotice({
+        to: oldEmail,
+        title: event.title,
+        nextEmail: email,
+      });
+    } catch (err) {
+      console.error("host email change notice failed", providerErrorMessage(err));
+    }
+  }
   try {
     await sendHostEmailChangeEmail({
       to: email,
@@ -488,7 +518,9 @@ export async function requestHostEmailChange(formData: FormData) {
       hostName: event.host_name,
     });
   } catch (err) {
-    redirect(managePath(event, { error: providerErrorMessage(err) }, access));
+    console.error("host email change failed", providerErrorMessage(err));
+    await revokeEmailChangeToken(issued.token);
+    redirect(managePath(event, { error: GENERIC_MAIL_ERROR }, access));
   }
   redirect(
     managePath(

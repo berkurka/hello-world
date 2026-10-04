@@ -65,11 +65,12 @@ async function ensureSchema() {
       host_email TEXT,
       host_claim_token TEXT,
       host_claimed_at TEXT,
+      host_email_verified_at TEXT,
       ask_comment INTEGER NOT NULL DEFAULT 1,
       ask_adults INTEGER NOT NULL DEFAULT 1,
       ask_kids INTEGER NOT NULL DEFAULT 0,
       ask_infants INTEGER NOT NULL DEFAULT 0,
-      allow_maybe INTEGER NOT NULL DEFAULT 1,
+      allow_maybe INTEGER NOT NULL DEFAULT 0,
       party_image_mime TEXT,
       timezone TEXT,
       ends_at TEXT,
@@ -117,7 +118,8 @@ async function ensureSchema() {
   await addColumnIfMissing("events", "host_claimed_at", "TEXT");
   await addColumnIfMissing("invitees", "email2", "TEXT");
   await addColumnIfMissing("events", "party_image_mime", "TEXT");
-  await addColumnIfMissing("events", "allow_maybe", "INTEGER NOT NULL DEFAULT 1");
+  await addColumnIfMissing("events", "host_email_verified_at", "TEXT");
+  await addColumnIfMissing("events", "allow_maybe", "INTEGER NOT NULL DEFAULT 0");
   await addColumnIfMissing("events", "timezone", "TEXT");
   await addColumnIfMissing("events", "ends_at", "TEXT");
   await addColumnIfMissing("events", "updated_at", "TEXT");
@@ -152,6 +154,7 @@ async function ensureSchema() {
     id TEXT PRIMARY KEY,
     event_id TEXT NOT NULL,
     new_email TEXT NOT NULL,
+    previous_email TEXT,
     token_hash TEXT NOT NULL UNIQUE,
     expires_at TEXT NOT NULL,
     used_at TEXT,
@@ -160,15 +163,35 @@ async function ensureSchema() {
   await db.execute(
     `CREATE INDEX IF NOT EXISTS host_email_changes_event_created ON host_email_changes(event_id, created_at)`,
   );
+  await addColumnIfMissing("host_email_changes", "previous_email", "TEXT");
   await db.execute(`CREATE TABLE IF NOT EXISTS host_device_grants (
     id TEXT PRIMARY KEY,
     event_id TEXT NOT NULL,
     token_hash TEXT NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    expires_at TEXT
   )`);
+  await addColumnIfMissing("host_device_grants", "expires_at", "TEXT");
   await db.execute(
     `CREATE INDEX IF NOT EXISTS host_device_grants_lookup ON host_device_grants(token_hash, event_id)`,
   );
+  const deviceExpiry = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+  await db.execute({
+    sql: `UPDATE host_device_grants SET expires_at = ? WHERE expires_at IS NULL`,
+    args: [deviceExpiry],
+  });
+  await db.execute(`CREATE TABLE IF NOT EXISTS schema_flags (name TEXT PRIMARY KEY)`);
+  const maybeFlag = await db.execute({
+    sql: `SELECT name FROM schema_flags WHERE name = ?`,
+    args: ["allow_maybe_existing_off"],
+  });
+  if (maybeFlag.rows.length === 0) {
+    await db.execute(`UPDATE events SET allow_maybe = 0`);
+    await db.execute({
+      sql: `INSERT INTO schema_flags (name) VALUES (?)`,
+      args: ["allow_maybe_existing_off"],
+    });
+  }
 }
 
 export async function readyDb() {

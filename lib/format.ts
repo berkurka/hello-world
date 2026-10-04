@@ -42,6 +42,13 @@ export function storesHeadcount(attending: number) {
   return attending === 1 || attending === 2;
 }
 
+/** Dashboard totals and row counts use the same rule. Maybe counts only while it is allowed. */
+export function headcountAttending(attending: number | null, allowMaybe: boolean) {
+  if (attending === 1) return true;
+  if (attending === 2 && allowMaybe) return true;
+  return false;
+}
+
 export function parseAttending(raw: string, allowMaybe: boolean): 0 | 1 | 2 | null {
   if (raw === "yes") return 1;
   if (raw === "no") return 0;

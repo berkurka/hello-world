@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { EventRow, InviteeRow } from "./types";
-import { buildInviteMail, hostFromHeader, mailConfigFrom, mailConfigured, mailFromHeader, providerErrorMessage } from "./mail";
+import { buildInviteMail, hostDisplayName, hostFromHeader, mailConfigFrom, mailConfigured, mailFromHeader, providerErrorMessage } from "./mail";
 
 const resend = {
   SMTP_HOST: "smtp.resend.com",
@@ -73,6 +73,8 @@ test("mail is not configured when neither SMTP nor Gmail is complete", () => {
 test("invite mail is from the host via Partyz", () => {
   assert.equal(hostFromHeader("Bernardo", resend), `"Bernardo via Partyz" <onboarding@resend.dev>`);
   assert.equal(hostFromHeader("Bob\n\"via\"", resend), `"Bob via via Partyz" <onboarding@resend.dev>`);
+  assert.equal(hostFromHeader("Ann<boss>@evil\\x", resend), `"Ann boss evil x via Partyz" <onboarding@resend.dev>`);
+  assert.equal(hostDisplayName("A".repeat(80)).length <= 60, true);
   assert.equal(hostFromHeader("  ", resend), `"Partyz" <onboarding@resend.dev>`);
   assert.equal(hostFromHeader("Bernardo", {}), null);
 });
@@ -86,6 +88,7 @@ test("invite messages reply to the host and preview the party", () => {
     ends_at: null,
     location: "Riverside Park",
     timezone: "America/New_York",
+    host_email_verified_at: "2026-10-04T00:00:00.000Z",
   } as EventRow;
   const invitee = { display_name: "Priya", token: "abc" } as InviteeRow;
   const message = buildInviteMail({
@@ -99,7 +102,15 @@ test("invite messages reply to the host and preview the party", () => {
   assert.match(message.html, /display:none/);
   assert.match(message.text, /\/rsvp\/abc\/event\.ics/);
   assert.match(message.text, /calendar\.google\.com/);
+  assert.doesNotMatch(message.text, /calendar\.google\.com[^\n]*rsvp/i);
+  assert.doesNotMatch(message.text, /outlook\.live\.com[^\n]*rsvp/i);
   assert.match(message.text, /maps/);
+  const unverified = buildInviteMail({
+    event: { ...event, host_email_verified_at: null },
+    invitee,
+    rsvpLink: "https://example.com/rsvp/abc",
+  });
+  assert.equal(unverified.replyTo, undefined);
 });
 
 test("provider errors keep the SMTP response text", () => {

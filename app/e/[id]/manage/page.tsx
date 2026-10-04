@@ -5,7 +5,7 @@ import { Flash } from "@/app/components/flash";
 import { HostPartySettings } from "@/app/components/host-party-settings";
 import { rsvpUrl } from "@/lib/app-url";
 import { listInvitees } from "@/lib/db";
-import { attendingLabel, formatWhen, storesHeadcount } from "@/lib/format";
+import { attendingLabel, formatWhen, headcountAttending, normalizeStoredEmail } from "@/lib/format";
 import { authorizeOrganizer, sessionEmailFromToken } from "@/lib/host-login";
 import { INVITEE_CSV_FILENAME } from "@/lib/invitee-csv";
 import { mailConfigured } from "@/lib/mail";
@@ -39,13 +39,15 @@ export default async function ManageEventPage({
     (event.ask_kids ? 1 : 0) +
     (event.ask_infants ? 1 : 0) +
     (event.ask_comment ? 1 : 0);
+  const allowMaybe = event.allow_maybe !== 0;
   const yes = invitees.filter((row) => row.attending === 1);
   const maybe = invitees.filter((row) => row.attending === 2);
   const no = invitees.filter((row) => row.attending === 0);
   const pending = invitees.filter((row) => row.attending === null);
-  const adults = yes.reduce((sum, row) => sum + (row.adults ?? 0), 0);
-  const kids = yes.reduce((sum, row) => sum + (row.kids ?? 0), 0);
-  const infants = yes.reduce((sum, row) => sum + (row.infants ?? 0), 0);
+  const counted = (row: { attending: number | null }) => headcountAttending(row.attending, allowMaybe);
+  const adults = invitees.reduce((sum, row) => sum + (counted(row) ? (row.adults ?? 0) : 0), 0);
+  const kids = invitees.reduce((sum, row) => sum + (counted(row) ? (row.kids ?? 0) : 0), 0);
+  const infants = invitees.reduce((sum, row) => sum + (counted(row) ? (row.infants ?? 0) : 0), 0);
 
   return (
     <main className="wrap">
@@ -113,6 +115,11 @@ export default async function ManageEventPage({
             </div>
           ) : null}
         </div>
+        {!allowMaybe && maybe.length > 0 ? (
+          <p className="hint">
+            Maybe is off. Those guests need to choose yes or no, and their counts are not included.
+          </p>
+        ) : null}
         <div className="table-wrap">
           <table>
             <thead>
@@ -147,13 +154,13 @@ export default async function ManageEventPage({
                     </td>
                     <td>{attendingLabel(row.attending)}</td>
                     {event.ask_adults ? (
-                      <td>{storesHeadcount(row.attending ?? -1) ? row.adults : "—"}</td>
+                      <td>{counted(row) ? row.adults : "—"}</td>
                     ) : null}
                     {event.ask_kids ? (
-                      <td>{storesHeadcount(row.attending ?? -1) ? row.kids : "—"}</td>
+                      <td>{counted(row) ? row.kids : "—"}</td>
                     ) : null}
                     {event.ask_infants ? (
-                      <td>{storesHeadcount(row.attending ?? -1) ? row.infants : "—"}</td>
+                      <td>{counted(row) ? row.infants : "—"}</td>
                     ) : null}
                     {event.ask_comment ? <td>{row.comment ?? ""}</td> : null}
                     <td>
@@ -261,7 +268,16 @@ export default async function ManageEventPage({
           </EventForm>
         </section>
       </div>
-      <HostPartySettings event={event} manageToken={manageToken} mailOn={canEmail} />
+      <HostPartySettings
+        event={event}
+        manageToken={manageToken}
+        mailOn={canEmail}
+        canChangeEmail={
+          access === "session" &&
+          signedInEmail === normalizeStoredEmail(event.host_email) &&
+          Boolean(signedInEmail)
+        }
+      />
     </main>
   );
 }

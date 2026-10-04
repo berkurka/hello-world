@@ -68,13 +68,29 @@ export function mailFromHeader(env: MailEnv = process.env) {
   return `"${name}" <${config.from}>`;
 }
 
+export function hostDisplayName(hostName: string) {
+  const host = hostName.replace(/[\r\n"\\<>@]/g, " ").replace(/\s+/g, " ").trim();
+  const suffix = " via Partyz";
+  if (!host) return "Partyz";
+  const room = 60 - suffix.length;
+  const trimmed = host.length > room ? host.slice(0, room).trim() : host;
+  const name = `${trimmed}${suffix}`;
+  return name.length > 60 ? name.slice(0, 60).trim() : name;
+}
+
 export function hostFromHeader(hostName: string, env: MailEnv = process.env) {
   const config = mailConfigFrom(env);
   if (!config) return null;
-  const host = hostName.replace(/[\r\n"]/g, " ").replace(/\s+/g, " ").trim();
-  const name = host ? `${host} via Partyz` : "Partyz";
-  return `"${name}" <${config.from}>`;
+  return `"${hostDisplayName(hostName)}" <${config.from}>`;
 }
+
+export function inviteReplyTo(event: { host_email?: string | null; host_email_verified_at?: string | null }) {
+  if (!event.host_email_verified_at) return undefined;
+  const hostEmail = event.host_email?.trim() ?? "";
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(hostEmail) ? hostEmail : undefined;
+}
+
+export const GENERIC_MAIL_ERROR = "Could not send email. Try again in a little while.";
 
 export function providerErrorMessage(err: unknown) {
   let text = "Send failed.";
@@ -126,14 +142,13 @@ export function buildInviteMail(opts: { event: EventRow; invitee: InviteeRow; rs
     endsAt: event.ends_at,
     timezone: event.timezone,
     location: event.location,
-    details: `RSVP: ${rsvpLink}`,
+    details: "",
   };
   const google = googleCalendarUrl(calendar);
   const outlook = outlookCalendarUrl(calendar);
   const ics = icsUrl(invitee.token);
   const map = event.location.trim() ? googleMapsUrl(event.location.trim()) : null;
-  const hostEmail = event.host_email?.trim() ?? "";
-  const replyTo = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(hostEmail) ? hostEmail : undefined;
+  const replyTo = inviteReplyTo(event);
   const textLines = [
     preview,
     "",
@@ -292,6 +307,30 @@ export async function sendHostSignInEmail(opts: {
         <p style="color:#5c4638">Or paste this link: ${escapeHtml(opts.link)}</p>
         ${list ? `<p style="color:#5c4638">${escapeHtml(list)}</p>` : ""}
         <p style="color:#5c4638">If you did not ask for this, you can ignore it.</p>
+      </div>
+    `,
+  });
+}
+
+export async function sendHostEmailChangeNotice(opts: { to: string; title: string; nextEmail: string }) {
+  const from = mailFromHeader();
+  if (!from) throw new Error(NOT_CONFIGURED);
+  const subject = `Host email change requested for ${opts.title}`;
+  const text = [
+    `Someone asked to change the host email for “${opts.title}” to ${opts.nextEmail}.`,
+    "The address changes only if that inbox confirms the link we sent there.",
+    "If this was not you, sign in and reset the dashboard link.",
+  ].join("\n");
+  await transporter().sendMail({
+    from,
+    to: opts.to,
+    subject,
+    text,
+    html: `
+      <div style="font-family:Georgia,serif;color:#2c1810;max-width:640px">
+        <p>Someone asked to change the host email for <strong>${escapeHtml(opts.title)}</strong> to <strong>${escapeHtml(opts.nextEmail)}</strong>.</p>
+        <p>The address changes only if that inbox confirms the link we sent there.</p>
+        <p>If this was not you, sign in and reset the dashboard link.</p>
       </div>
     `,
   });

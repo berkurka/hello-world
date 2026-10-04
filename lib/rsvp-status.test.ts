@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { attendingLabel, parseAttending, storesHeadcount } from "./format";
+import { attendingLabel, headcountAttending, parseAttending, storesHeadcount } from "./format";
 
 test("maybe is a third rsvp status and keeps headcounts", () => {
   assert.equal(attendingLabel(1), "Yes");
@@ -14,4 +14,8 @@ test("maybe is a third rsvp status and keeps headcounts", () => {
   assert.equal(storesHeadcount(1), true);
   assert.equal(storesHeadcount(2), true);
   assert.equal(storesHeadcount(0), false);
+  assert.equal(headcountAttending(2, true), true);
+  assert.equal(headcountAttending(2, false), false);
+  assert.equal(headcountAttending(1, false), true);
+  assert.equal(headcountAttending(0, true), false);
 });

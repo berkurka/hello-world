@@ -8,6 +8,7 @@ export type EventRow = {
   host_email: string | null;
   host_claim_token: string | null;
   host_claimed_at: string | null;
+  host_email_verified_at: string | null;
   ask_comment: number;
   ask_adults: number;
   ask_kids: number;

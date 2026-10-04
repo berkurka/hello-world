@@ -1,7 +1,7 @@
 import { Flash } from "@/app/components/flash";
 import { PartyActions } from "@/app/components/party-actions";
 import { RsvpResponse } from "@/app/components/rsvp-response";
-import { icsPath, inviteCardPath, rsvpUrl } from "@/lib/app-url";
+import { icsPath, inviteCardPath } from "@/lib/app-url";
 import { getEvent, getInviteeByToken, getRsvp } from "@/lib/db";
 import { formatWhen } from "@/lib/format";
 import { partyImagePath } from "@/lib/party-image";
@@ -61,7 +61,7 @@ export default async function RsvpPage({
             endsAt={event.ends_at}
             timezone={event.timezone}
             location={event.location}
-            details={`RSVP: ${rsvpUrl(invitee.token)}`}
+            details=""
             icsPath={icsPath(invitee.token)}
           />
           <Flash error={error} />

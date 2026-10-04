@@ -6,6 +6,7 @@ import {
   LOGIN_IP_LIMIT,
   RECOVER_SENT_MESSAGE,
   SESSION_TTL_SECONDS,
+  canChangeHostEmail,
   clientIpFromHeaders,
   hashToken,
   splitByStart,
@@ -37,10 +38,24 @@ test("tokens are stored as sha256 hashes", () => {
   assert.notEqual(hashToken("abd"), hash);
 });
 
-test("client IP uses the first forwarded address", () => {
-  const headers = new Headers({ "x-forwarded-for": "203.0.113.8, 10.0.0.1" });
-  assert.equal(clientIpFromHeaders(headers), "203.0.113.8");
+test("client IP prefers the Vercel forwarded address", () => {
+  const headers = new Headers({
+    "x-vercel-forwarded-for": "198.51.100.4, 10.0.0.2",
+    "x-forwarded-for": "203.0.113.8, 10.0.0.1",
+  });
+  assert.equal(clientIpFromHeaders(headers), "198.51.100.4");
+  assert.equal(clientIpFromHeaders(new Headers({ "x-forwarded-for": "203.0.113.8, 10.0.0.1" })), "203.0.113.8");
   assert.equal(clientIpFromHeaders(new Headers()), "unknown");
+});
+
+test("requestHostEmailChange is allowed only for the signed-in host", () => {
+  assert.equal(canChangeHostEmail("session", "host@example.com", "host@example.com"), true);
+  assert.equal(canChangeHostEmail("session", "Host@Example.com", "host@example.com"), true);
+  assert.equal(canChangeHostEmail("token", "host@example.com", "host@example.com"), false);
+  assert.equal(canChangeHostEmail("device", "host@example.com", "host@example.com"), false);
+  assert.equal(canChangeHostEmail("session", "other@example.com", "host@example.com"), false);
+  assert.equal(canChangeHostEmail("session", null, "host@example.com"), false);
+  assert.equal(canChangeHostEmail("session", "host@example.com", null), false);
 });
 
 test("parties split into upcoming and past by wall-clock start", () => {

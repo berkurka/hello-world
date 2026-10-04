@@ -14,9 +14,10 @@ type Props = {
 };
 
 export function RsvpResponse({ token, event, invitee, rsvp, openForm }: Props) {
-  const [editing, setEditing] = useState(!rsvp || Boolean(openForm));
+  const staleMaybe = rsvp?.attending === 2 && event.allow_maybe === 0;
+  const [editing, setEditing] = useState(!rsvp || Boolean(openForm) || Boolean(staleMaybe));
   const counts =
-    rsvp && (rsvp.attending === 1 || rsvp.attending === 2)
+    rsvp && !staleMaybe && (rsvp.attending === 1 || rsvp.attending === 2)
       ? [
           event.ask_adults ? `Adults: ${rsvp.adults}` : "",
           event.ask_kids ? `Kids: ${rsvp.kids}` : "",
@@ -26,7 +27,10 @@ export function RsvpResponse({ token, event, invitee, rsvp, openForm }: Props) {
 
   return (
     <div className="stack">
-      {rsvp ? (
+      {staleMaybe ? (
+        <p className="lede">Maybe is no longer an option for this party. Please choose yes or no.</p>
+      ) : null}
+      {rsvp && !staleMaybe ? (
         <div>
           <h2>Your family already RSVP'd: {attendingLabel(rsvp.attending)}</h2>
           {counts.length > 0 ? <p style={{ marginTop: "0.75rem" }}>{counts.join(" · ")}</p> : null}

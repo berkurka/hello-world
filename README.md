@@ -90,10 +90,10 @@ Columns added this way:
 
 - `events.host_email`, `events.host_claim_token`, `events.host_claimed_at`
 - `events.party_image_mime`, `invitees.email2`
-- `events.allow_maybe` (default 1), `events.timezone`, `events.ends_at`, `events.updated_at`
+- `events.allow_maybe` (default 0 for parties that already existed; new parties set it from the form, on unless the host turns it off), `events.timezone`, `events.ends_at`, `events.updated_at`, `events.host_email_verified_at`
 - index `events_host_email`
 
-New tables: `host_login_tokens` (one-time sign-in links, 30-minute expiry, only the SHA-256 hash is stored), `host_sessions` (30-day cookie sessions), `host_email_changes` (confirm a new host email), and `host_device_grants` (this browser can reopen a party it created). Party images also use an `event_images` table (bytes stay out of ordinary event reads). `display_name` stays the family or guest label. One invitee row is still one token and one RSVP. Rows saved before `email2` existed keep a null second address and the same link. Parties created before a host email existed can add one from Host access; the change is confirmed from that inbox.
+New tables: `host_login_tokens` (one-time sign-in links, 30-minute expiry, only the SHA-256 hash is stored; create and recover requests share the same hourly limits), `host_sessions` (30-day cookie sessions), `host_email_changes` (confirm a new host email; `previous_email` is the address at request time), and `host_device_grants` (this browser can reopen a party it created, with `expires_at`). A one-time `schema_flags` row turns Maybe off for parties that already existed. Party images also use an `event_images` table (bytes stay out of ordinary event reads). `display_name` stays the family or guest label. One invitee row is still one token and one RSVP. Rows saved before `email2` existed keep a null second address and the same link. Changing the host email requires a signed-in session for the current address. The current address is notified, and the new address must confirm the link.
 
 Sign-in and recovery mail use the same SMTP settings as invites. There are no new environment variables. With Resend, `MAIL_FROM` must be on a domain you have verified, or messages only reach the Resend account owner.
 
