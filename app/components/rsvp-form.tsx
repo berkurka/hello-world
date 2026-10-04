@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { saveRsvp } from "@/app/actions";
+import { RsvpChoice } from "@/app/components/rsvp-choice";
 import type { EventRow, InviteeRow, RsvpRow } from "@/lib/types";
 
 type Props = {
@@ -11,11 +12,18 @@ type Props = {
   rsvp: RsvpRow | null;
 };
 
+function initialChoice(rsvp: RsvpRow | null, allowMaybe: boolean) {
+  if (!rsvp) return "" as const;
+  if (rsvp.attending === 1) return "yes" as const;
+  if (rsvp.attending === 2 && allowMaybe) return "maybe" as const;
+  if (rsvp.attending === 0) return "no" as const;
+  return "" as const;
+}
+
 export function RsvpForm({ token, event, invitee, rsvp }: Props) {
-  const [attending, setAttending] = useState<"yes" | "no" | "">(
-    rsvp ? (rsvp.attending === 1 ? "yes" : "no") : "",
-  );
-  const showCounts = attending === "yes";
+  const allowMaybe = event.allow_maybe !== 0;
+  const [attending, setAttending] = useState(initialChoice(rsvp, allowMaybe));
+  const showCounts = attending === "yes" || attending === "maybe";
 
   return (
     <form action={saveRsvp} className="stack">
@@ -23,30 +31,7 @@ export function RsvpForm({ token, event, invitee, rsvp }: Props) {
       <p className="lede">
         Hi {invitee.display_name} — can you make it?
       </p>
-      <div className="choice">
-        <label className={attending === "yes" ? "pick on" : "pick"}>
-          <input
-            type="radio"
-            name="attending"
-            value="yes"
-            required
-            checked={attending === "yes"}
-            onChange={() => setAttending("yes")}
-          />
-          Yes
-        </label>
-        <label className={attending === "no" ? "pick on" : "pick"}>
-          <input
-            type="radio"
-            name="attending"
-            value="no"
-            required
-            checked={attending === "no"}
-            onChange={() => setAttending("no")}
-          />
-          No
-        </label>
-      </div>
+      <RsvpChoice attending={attending} allowMaybe={allowMaybe} onChange={setAttending} />
       {showCounts && (event.ask_adults || event.ask_kids || event.ask_infants) ? (
         <div className="counts">
           {event.ask_adults ? (

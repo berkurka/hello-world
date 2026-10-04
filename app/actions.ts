@@ -1,13 +1,14 @@
 "use server";
 
+import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { hostClaimUrl, rsvpUrl } from "@/lib/app-url";
+import { hostEmailChangeUrl, hostLoginUrl, rsvpUrl } from "@/lib/app-url";
+import { isValidTimeZone, resolveEndsAt } from "@/lib/calendar";
 import {
   deleteEventImage,
   emailsUsedOnEvent,
   getEvent,
-  getEventForOrganizer,
   getInviteeByToken,
   getRsvp,
   insertInvitee,
@@ -15,7 +16,19 @@ import {
   run,
   saveEventImage,
 } from "@/lib/db";
-import { asBool, asCount, isEmail, normalizeStoredEmail } from "@/lib/format";
+import { asBool, asCount, isEmail, normalizeStoredEmail, parseAttending, storesHeadcount } from "@/lib/format";
+import {
+  authorizeOrganizer,
+  createLoginToken,
+  deleteSession,
+  issueEmailChange,
+  issueHostLogin,
+  redeemEmailChange,
+  redeemHostLogin,
+  rotateDashboardSecrets,
+  startSession,
+  type HostAccess,
+} from "@/lib/host-login";
 import { appendSendError, familyInviteNotice, unsentBatchNotice } from "@/lib/invite-delivery";
 import { newId, newToken } from "@/lib/ids";
 import {
@@ -24,8 +37,21 @@ import {
   parseInviteeCsv,
   summarizeInviteeImport,
 } from "@/lib/invitee-csv";
+import {
+  mailConfigured,
+  providerErrorMessage,
+  sendHostEmailChangeEmail,
+  sendHostSignInEmail,
+  sendInviteEmail,
+} from "@/lib/mail";
 import { inspectPartyImage } from "@/lib/party-image";
-import { mailConfigured, providerErrorMessage, sendHostClaimEmail, sendInviteEmail } from "@/lib/mail";
+import {
+  clearSessionCookie,
+  readClientIp,
+  readHostCreds,
+  rememberCreatedParty,
+  writeSessionCookie,
+} from "@/lib/request-auth";
 
 function required(formData: FormData, key: string) {
   for (const value of formData.getAll(key)) {
@@ -38,9 +64,9 @@ function required(formData: FormData, key: string) {
 async function requireOrganizer(formData: FormData) {
   const eventId = required(formData, "eventId");
   const token = required(formData, "t");
-  const event = await getEventForOrganizer(eventId, token);
-  if (!event) throw new Error("Event not found");
-  return event;
+  const auth = await authorizeOrganizer(eventId, token || null, await readHostCreds());
+  if (!auth) throw new Error("Event not found");
+  return auth;
 }
 
 function firstMatch(formData: FormData, key: string, re: RegExp) {
@@ -73,13 +99,20 @@ function eventFields(formData: FormData) {
   const startsTimeRaw = firstMatch(formData, "startsTime", /^\d{2}:\d{2}/);
   const startsTime = startsTimeRaw.slice(0, 5);
   const startsAt = startsDate && startsTime ? `${startsDate}T${startsTime}` : "";
+  const endsTimeRaw = firstMatch(formData, "endsTime", /^\d{2}:\d{2}/);
+  const endsTime = endsTimeRaw.slice(0, 5);
   const location = required(formData, "location");
   const hostName = required(formData, "hostName");
+  const timezoneRaw = required(formData, "timezone");
+  const timezone = isValidTimeZone(timezoneRaw) ? timezoneRaw : null;
   return {
     title,
     startsAt,
+    endsAt: startsAt ? resolveEndsAt(startsAt, endsTime) : null,
     location,
     hostName,
+    timezone,
+    allowMaybe: asBool(formData.get("allowMaybe")) ? 1 : 0,
     askComment: asBool(formData.get("askComment")) ? 1 : 0,
     askAdults: asBool(formData.get("askAdults")) ? 1 : 0,
     askKids: asBool(formData.get("askKids")) ? 1 : 0,
@@ -107,14 +140,19 @@ export async function createEvent(formData: FormData) {
   const id = newId();
   const adminToken = newToken();
   const hostClaimToken = newToken();
+  const now = new Date().toISOString();
   await run(
-    `INSERT INTO events (id, admin_token, title, starts_at, location, host_name, host_email, host_claim_token, host_claimed_at, ask_comment, ask_adults, ask_kids, ask_infants, party_image_mime, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL, ?)`,
+    `INSERT INTO events (
+      id, admin_token, title, starts_at, ends_at, location, host_name, host_email,
+      host_claim_token, host_claimed_at, ask_comment, ask_adults, ask_kids, ask_infants,
+      allow_maybe, party_image_mime, timezone, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
     [
       id,
       adminToken,
       fields.title,
       fields.startsAt,
+      fields.endsAt,
       fields.location,
       fields.hostName,
       hostEmail,
@@ -123,37 +161,28 @@ export async function createEvent(formData: FormData) {
       fields.askAdults,
       fields.askKids,
       fields.askInfants,
-      new Date().toISOString(),
+      fields.allowMaybe,
+      fields.timezone,
+      now,
+      now,
     ],
   );
   if (image.kind === "file") {
     await saveEventImage(id, image.mime, image.data);
   }
+  await rememberCreatedParty(id);
 
   let mail: "sent" | "skipped" | "failed" = "skipped";
   let mailError = "";
   if (mailConfigured()) {
     try {
-      await sendHostClaimEmail({
-        event: {
-          id,
-          admin_token: adminToken,
-          title: fields.title,
-          starts_at: fields.startsAt,
-          location: fields.location,
-          host_name: fields.hostName,
-          host_email: hostEmail,
-          host_claim_token: hostClaimToken,
-          host_claimed_at: null,
-          ask_comment: fields.askComment,
-          ask_adults: fields.askAdults,
-          ask_kids: fields.askKids,
-          ask_infants: fields.askInfants,
-          party_image_mime: image.kind === "file" ? image.mime : null,
-          created_at: new Date().toISOString(),
-        },
-        hostEmail,
-        claimLink: hostClaimUrl(hostClaimToken),
+      const token = await createLoginToken(hostEmail, "create", await readClientIp());
+      await sendHostSignInEmail({
+        to: hostEmail,
+        link: hostLoginUrl(token),
+        hostName: fields.hostName,
+        titles: [fields.title],
+        kind: "create",
       });
       mail = "sent";
     } catch (err) {
@@ -168,7 +197,7 @@ export async function createEvent(formData: FormData) {
 }
 
 export async function updateEvent(formData: FormData) {
-  const event = await requireOrganizer(formData);
+  const { event, access } = await requireOrganizer(formData);
   const fields = eventFields(formData);
   if (!fields.title) {
     return { error: "Title is required." };
@@ -182,17 +211,24 @@ export async function updateEvent(formData: FormData) {
   const image = await readPartyImageInput(formData);
   if (image.kind === "error") return { error: image.error };
   await run(
-    `UPDATE events SET title = ?, starts_at = ?, location = ?, host_name = ?, ask_comment = ?, ask_adults = ?, ask_kids = ?, ask_infants = ?
+    `UPDATE events
+     SET title = ?, starts_at = ?, ends_at = ?, location = ?, host_name = ?,
+         ask_comment = ?, ask_adults = ?, ask_kids = ?, ask_infants = ?, allow_maybe = ?,
+         timezone = COALESCE(timezone, ?), updated_at = ?
      WHERE id = ?`,
     [
       fields.title,
       fields.startsAt,
+      fields.endsAt,
       fields.location,
       fields.hostName,
       fields.askComment,
       fields.askAdults,
       fields.askKids,
       fields.askInfants,
+      fields.allowMaybe,
+      fields.timezone,
+      new Date().toISOString(),
       event.id,
     ],
   );
@@ -202,55 +238,57 @@ export async function updateEvent(formData: FormData) {
     await deleteEventImage(event.id);
   }
   revalidatePath(`/e/${event.id}/manage`);
-  redirect(`/e/${event.id}/manage?t=${event.admin_token}&notice=` + encodeURIComponent("Event updated."));
+  redirect(managePath(event, { notice: "Event updated." }, access));
 }
 
 function managePath(
   event: { id: string; admin_token: string },
   flash: { notice?: string; error?: string },
+  access: HostAccess,
 ) {
   const params = new URLSearchParams();
-  params.set("t", event.admin_token);
+  if (access === "token") params.set("t", event.admin_token);
   if (flash.notice) params.set("notice", flash.notice);
   if (flash.error) params.set("error", flash.error);
-  return `/e/${event.id}/manage?${params.toString()}`;
+  const qs = params.toString();
+  return qs ? `/e/${event.id}/manage?${qs}` : `/e/${event.id}/manage`;
 }
 
 export async function addInvitee(formData: FormData) {
-  const event = await requireOrganizer(formData);
+  const { event, access } = await requireOrganizer(formData);
   const email = normalizeStoredEmail(required(formData, "email"));
   const email2 = normalizeStoredEmail(required(formData, "email2"));
   const displayName = required(formData, "displayName");
   if (!displayName || !email || !isEmail(email)) {
-    redirect(managePath(event, { error: "Need a family or guest name and a valid email." }));
+    redirect(managePath(event, { error: "Need a family or guest name and a valid email." }, access));
   }
   if (email2 && !isEmail(email2)) {
-    redirect(managePath(event, { error: "Second email is not valid." }));
+    redirect(managePath(event, { error: "Second email is not valid." }, access));
   }
   if (email2 && email2 === email) {
-    redirect(managePath(event, { error: "The two emails are the same." }));
+    redirect(managePath(event, { error: "The two emails are the same." }, access));
   }
   const taken = await emailsUsedOnEvent(event.id);
   if (taken.has(email) || (email2 && taken.has(email2))) {
-    redirect(managePath(event, { error: "That email is already used on this event." }));
+    redirect(managePath(event, { error: "That email is already used on this event." }, access));
   }
   try {
     await insertInvitee(event.id, email, displayName, email2);
   } catch {
-    redirect(managePath(event, { error: "That email is already used on this event." }));
+    redirect(managePath(event, { error: "That email is already used on this event." }, access));
   }
   revalidatePath(`/e/${event.id}/manage`);
-  redirect(managePath(event, { notice: "Invitee added." }));
+  redirect(managePath(event, { notice: "Invitee added." }, access));
 }
 
 export async function importInvitees(formData: FormData) {
-  const event = await requireOrganizer(formData);
+  const { event, access } = await requireOrganizer(formData);
   const file = formData.get("csv");
   if (!(file instanceof File) || file.size === 0) {
-    redirect(managePath(event, { error: "Choose a CSV file to import." }));
+    redirect(managePath(event, { error: "Choose a CSV file to import." }, access));
   }
   if (file.size > INVITEE_CSV_MAX_BYTES) {
-    redirect(managePath(event, { error: "That file is too large. Use a CSV under 256 KB." }));
+    redirect(managePath(event, { error: "That file is too large. Use a CSV under 256 KB." }, access));
   }
   const text = await file.text();
   const plan = applyExistingEmails(parseInviteeCsv(text), await emailsUsedOnEvent(event.id));
@@ -267,9 +305,9 @@ export async function importInvitees(formData: FormData) {
   const summary = summarizeInviteeImport(added, plan.skips);
   revalidatePath(`/e/${event.id}/manage`);
   if (added === 0) {
-    redirect(managePath(event, { error: summary }));
+    redirect(managePath(event, { error: summary }, access));
   }
-  redirect(managePath(event, { notice: summary }));
+  redirect(managePath(event, { notice: summary }, access));
 }
 
 async function deliverInvite(eventId: string, inviteeId: string) {
@@ -298,34 +336,38 @@ async function deliverInvite(eventId: string, inviteeId: string) {
 }
 
 export async function sendInvite(formData: FormData) {
-  const event = await requireOrganizer(formData);
+  const { event, access } = await requireOrganizer(formData);
   const inviteeId = required(formData, "inviteeId");
   let delivery;
   try {
     delivery = await deliverInvite(event.id, inviteeId);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Could not send invite.";
-    redirect(`/e/${event.id}/manage?t=${event.admin_token}&error=` + encodeURIComponent(message));
+    redirect(managePath(event, { error: message }, access));
   }
   revalidatePath(`/e/${event.id}/manage`);
   if (delivery.sent.length === 0) {
     const who = delivery.failed.join(", ");
     const base = who ? `Could not email ${who}.` : "Could not send invite.";
-    redirect(managePath(event, { error: appendSendError(base, delivery.error) }));
+    redirect(managePath(event, { error: appendSendError(base, delivery.error) }, access));
   }
   redirect(
-    managePath(event, {
-      notice: appendSendError(familyInviteNotice(delivery.sent, delivery.failed), delivery.error),
-    }),
+    managePath(
+      event,
+      {
+        notice: appendSendError(familyInviteNotice(delivery.sent, delivery.failed), delivery.error),
+      },
+      access,
+    ),
   );
 }
 
 export async function sendAllUnsent(formData: FormData) {
-  const event = await requireOrganizer(formData);
+  const { event, access } = await requireOrganizer(formData);
   const invitees = await listInvitees(event.id);
   const pending = invitees.filter((row) => !row.invited_at);
   if (pending.length === 0) {
-    redirect(`/e/${event.id}/manage?t=${event.admin_token}&notice=` + encodeURIComponent("No unsent invites."));
+    redirect(managePath(event, { notice: "No unsent invites." }, access));
   }
   let sentFamilies = 0;
   const failed: string[] = [];
@@ -347,10 +389,10 @@ export async function sendAllUnsent(formData: FormData) {
   if (sentFamilies === 0) {
     const who = failed.join(", ");
     const base = stopped || (who ? `Could not email ${who}.` : "Could not send invites.");
-    redirect(managePath(event, { error: appendSendError(base, sendError) }));
+    redirect(managePath(event, { error: appendSendError(base, sendError) }, access));
   }
   const notice = appendSendError(unsentBatchNotice(sentFamilies, failed), sendError);
-  redirect(managePath(event, { notice: stopped ? `${notice} ${stopped}` : notice }));
+  redirect(managePath(event, { notice: stopped ? `${notice} ${stopped}` : notice }, access));
 }
 
 export async function saveRsvp(formData: FormData) {
@@ -361,14 +403,17 @@ export async function saveRsvp(formData: FormData) {
   if (!event) redirect("/");
 
   const attendingRaw = required(formData, "attending");
-  if (attendingRaw !== "yes" && attendingRaw !== "no") {
-    redirect(`/rsvp/${token}?error=` + encodeURIComponent("Please choose yes or no."));
+  const allowMaybe = event.allow_maybe !== 0;
+  const attending = parseAttending(attendingRaw, allowMaybe);
+  if (attending === null) {
+    const message = allowMaybe ? "Please choose yes, maybe, or no." : "Please choose yes or no.";
+    redirect(`/rsvp/${token}?error=` + encodeURIComponent(message));
   }
-  const attending = attendingRaw === "yes" ? 1 : 0;
   const comment = event.ask_comment ? String(formData.get("comment") ?? "").trim() : "";
-  const adults = attending && event.ask_adults ? asCount(formData.get("adults")) : 0;
-  const kids = attending && event.ask_kids ? asCount(formData.get("kids")) : 0;
-  const infants = attending && event.ask_infants ? asCount(formData.get("infants")) : 0;
+  const keepCounts = storesHeadcount(attending);
+  const adults = keepCounts && event.ask_adults ? asCount(formData.get("adults")) : 0;
+  const kids = keepCounts && event.ask_kids ? asCount(formData.get("kids")) : 0;
+  const infants = keepCounts && event.ask_infants ? asCount(formData.get("infants")) : 0;
 
   const existing = await getRsvp(invitee.id);
   const now = new Date().toISOString();
@@ -386,4 +431,94 @@ export async function saveRsvp(formData: FormData) {
   }
   revalidatePath(`/rsvp/${token}`);
   redirect(`/rsvp/${token}?done=1`);
+}
+
+export async function requestHostLogin(formData: FormData) {
+  const email = normalizeStoredEmail(required(formData, "email"));
+  if (!email || !isEmail(email)) redirect("/host/recover?error=email");
+  if (!mailConfigured()) redirect("/host/recover?error=mail");
+  const issued = await issueHostLogin(email, await readClientIp());
+  if (issued.status === "sent") {
+    const { token, titles } = issued;
+    after(async () => {
+      try {
+        await sendHostSignInEmail({ to: email, link: hostLoginUrl(token), titles, kind: "recover" });
+      } catch (err) {
+        console.error("host sign-in email failed", providerErrorMessage(err));
+      }
+    });
+  }
+  redirect("/host/recover?sent=1");
+}
+
+export async function consumeHostLogin(formData: FormData) {
+  const token = required(formData, "token");
+  const email = await redeemHostLogin(token);
+  if (!email) redirect("/host/login?error=expired");
+  await writeSessionCookie(await startSession(email));
+  redirect("/host");
+}
+
+export async function signOutHost() {
+  const creds = await readHostCreds();
+  await deleteSession(creds.sessionToken);
+  await clearSessionCookie();
+  redirect("/");
+}
+
+export async function requestHostEmailChange(formData: FormData) {
+  const { event, access } = await requireOrganizer(formData);
+  const email = normalizeStoredEmail(required(formData, "email"));
+  if (!email || !isEmail(email)) {
+    redirect(managePath(event, { error: "Enter a valid email." }, access));
+  }
+  if (email === normalizeStoredEmail(event.host_email)) {
+    redirect(managePath(event, { error: "That is already the host email." }, access));
+  }
+  if (!mailConfigured()) {
+    redirect(managePath(event, { error: "Email is not set up, so the host email can't be changed." }, access));
+  }
+  const issued = await issueEmailChange(event.id, email);
+  if (!issued.ok) redirect(managePath(event, { error: issued.error }, access));
+  try {
+    await sendHostEmailChangeEmail({
+      to: email,
+      link: hostEmailChangeUrl(issued.token),
+      title: event.title,
+      hostName: event.host_name,
+    });
+  } catch (err) {
+    redirect(managePath(event, { error: providerErrorMessage(err) }, access));
+  }
+  redirect(
+    managePath(
+      event,
+      { notice: `Confirmation sent to ${email}. The host email changes when that link is opened.` },
+      access,
+    ),
+  );
+}
+
+export async function confirmHostEmail(formData: FormData) {
+  const token = required(formData, "token");
+  const changed = await redeemEmailChange(token);
+  if (!changed) redirect("/host/email?error=expired");
+  await writeSessionCookie(await startSession(changed.email));
+  revalidatePath(`/e/${changed.eventId}/manage`);
+  revalidatePath("/host");
+  redirect(`/e/${changed.eventId}/manage?notice=` + encodeURIComponent("Host email updated."));
+}
+
+export async function resetDashboardLink(formData: FormData) {
+  const { event, access } = await requireOrganizer(formData);
+  const adminToken = await rotateDashboardSecrets(event.id);
+  if (!adminToken) throw new Error("Event not found");
+  revalidatePath(`/e/${event.id}/manage`);
+  redirect(
+    managePath(
+      { id: event.id, admin_token: adminToken },
+      { notice: "Dashboard link reset. Old links no longer work." },
+      access,
+    ),
+  );
 }

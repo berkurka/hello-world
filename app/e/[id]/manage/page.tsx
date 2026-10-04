@@ -2,11 +2,15 @@ import { addInvitee, importInvitees, sendAllUnsent, sendInvite, updateEvent } fr
 import { CopyButton } from "@/app/components/copy-button";
 import { EventForm } from "@/app/components/event-form";
 import { Flash } from "@/app/components/flash";
-import { getEventForOrganizer, listInvitees } from "@/lib/db";
-import { attendingLabel, formatWhen } from "@/lib/format";
+import { HostPartySettings } from "@/app/components/host-party-settings";
 import { rsvpUrl } from "@/lib/app-url";
+import { listInvitees } from "@/lib/db";
+import { attendingLabel, formatWhen, storesHeadcount } from "@/lib/format";
+import { authorizeOrganizer, sessionEmailFromToken } from "@/lib/host-login";
 import { INVITEE_CSV_FILENAME } from "@/lib/invitee-csv";
 import { mailConfigured } from "@/lib/mail";
+import { readHostCreds } from "@/lib/request-auth";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -20,9 +24,12 @@ export default async function ManageEventPage({
 }) {
   const { id } = await params;
   const { t, error, notice } = await searchParams;
-  if (!t) notFound();
-  const event = await getEventForOrganizer(id, t);
-  if (!event) notFound();
+  const creds = await readHostCreds();
+  const auth = await authorizeOrganizer(id, t?.trim() || null, creds);
+  if (!auth) notFound();
+  const { event, access } = auth;
+  const manageToken = access === "token" ? event.admin_token : null;
+  const signedInEmail = await sessionEmailFromToken(creds.sessionToken);
   const invitees = await listInvitees(event.id);
   const canEmail = mailConfigured();
 
@@ -33,6 +40,7 @@ export default async function ManageEventPage({
     (event.ask_infants ? 1 : 0) +
     (event.ask_comment ? 1 : 0);
   const yes = invitees.filter((row) => row.attending === 1);
+  const maybe = invitees.filter((row) => row.attending === 2);
   const no = invitees.filter((row) => row.attending === 0);
   const pending = invitees.filter((row) => row.attending === null);
   const adults = yes.reduce((sum, row) => sum + (row.adults ?? 0), 0);
@@ -42,9 +50,21 @@ export default async function ManageEventPage({
   return (
     <main className="wrap">
       <Flash error={error} notice={notice} />
-      <p className="warn">
-        Bookmark this page. The secret in the URL is how you manage the event — there is no login.
-      </p>
+      {access === "session" && signedInEmail ? (
+        <p className="hint" style={{ marginBottom: "1rem" }}>
+          Signed in as {signedInEmail}.
+        </p>
+      ) : canEmail ? (
+        <p className="hint" style={{ marginBottom: "1rem" }}>
+          Anyone with this page&apos;s link can manage the party. Reset it below if it leaks, or{" "}
+          <Link href="/host/recover">find your parties</Link>
+          {event.host_email ? ` from ${event.host_email}` : ""}.
+        </p>
+      ) : (
+        <p className="warn">
+          Bookmark this page. The secret in the URL is how you manage the event — there is no login.
+        </p>
+      )}
       <div className="card">
         <h1>{event.title}</h1>
         <p className="lede">
@@ -61,6 +81,10 @@ export default async function ManageEventPage({
           <div>
             <b>{yes.length}</b>
             Yes
+          </div>
+          <div>
+            <b>{maybe.length}</b>
+            Maybe
           </div>
           <div>
             <b>{no.length}</b>
@@ -122,9 +146,15 @@ export default async function ManageEventPage({
                       ) : null}
                     </td>
                     <td>{attendingLabel(row.attending)}</td>
-                    {event.ask_adults ? <td>{row.attending === 1 ? row.adults : "—"}</td> : null}
-                    {event.ask_kids ? <td>{row.attending === 1 ? row.kids : "—"}</td> : null}
-                    {event.ask_infants ? <td>{row.attending === 1 ? row.infants : "—"}</td> : null}
+                    {event.ask_adults ? (
+                      <td>{storesHeadcount(row.attending ?? -1) ? row.adults : "—"}</td>
+                    ) : null}
+                    {event.ask_kids ? (
+                      <td>{storesHeadcount(row.attending ?? -1) ? row.kids : "—"}</td>
+                    ) : null}
+                    {event.ask_infants ? (
+                      <td>{storesHeadcount(row.attending ?? -1) ? row.infants : "—"}</td>
+                    ) : null}
                     {event.ask_comment ? <td>{row.comment ?? ""}</td> : null}
                     <td>
                       <div className="copy-row">
@@ -134,7 +164,7 @@ export default async function ManageEventPage({
                       {canEmail ? (
                         <form action={sendInvite}>
                           <input type="hidden" name="eventId" value={event.id} />
-                          <input type="hidden" name="t" value={t} />
+                          {manageToken ? <input type="hidden" name="t" value={manageToken} /> : null}
                           <input type="hidden" name="inviteeId" value={row.id} />
                           <button className="btn ghost small" type="submit">
                             {row.invited_at ? "Resend email" : "Send email"}
@@ -157,7 +187,7 @@ export default async function ManageEventPage({
           <h2>Add invitee</h2>
           <form action={addInvitee} className="stack" style={{ marginTop: "1rem" }}>
             <input type="hidden" name="eventId" value={event.id} />
-            <input type="hidden" name="t" value={t} />
+            {manageToken ? <input type="hidden" name="t" value={manageToken} /> : null}
             <label className="field">
               <span>Family or guest name</span>
               <input name="displayName" required placeholder="The Rivera family" />
@@ -190,7 +220,7 @@ export default async function ManageEventPage({
             </p>
             <form action={importInvitees} className="stack" style={{ marginTop: "0.85rem" }}>
               <input type="hidden" name="eventId" value={event.id} />
-              <input type="hidden" name="t" value={t} />
+              {manageToken ? <input type="hidden" name="t" value={manageToken} /> : null}
               <label className="field">
                 <span>CSV file</span>
                 <input name="csv" type="file" accept=".csv,text/csv,text/plain" required />
@@ -205,7 +235,7 @@ export default async function ManageEventPage({
           {canEmail ? (
             <form action={sendAllUnsent} style={{ marginTop: "0.75rem" }}>
               <input type="hidden" name="eventId" value={event.id} />
-              <input type="hidden" name="t" value={t} />
+              {manageToken ? <input type="hidden" name="t" value={manageToken} /> : null}
               <button className="btn ghost" type="submit">
                 Email everyone who has not been sent an invite
               </button>
@@ -227,10 +257,11 @@ export default async function ManageEventPage({
           <h2>Edit event</h2>
           <EventForm action={updateEvent} event={event} submitLabel="Save changes">
             <input type="hidden" name="eventId" value={event.id} />
-            <input type="hidden" name="t" value={t} />
+            {manageToken ? <input type="hidden" name="t" value={manageToken} /> : null}
           </EventForm>
         </section>
       </div>
+      <HostPartySettings event={event} manageToken={manageToken} mailOn={canEmail} />
     </main>
   );
 }

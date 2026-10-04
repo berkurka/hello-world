@@ -36,7 +36,7 @@ export default async function PartyCreatedPage({
         </div>
         {mailState === "sent" ? (
           <p className="flash notice">
-            We emailed a dashboard link. Save the URL below too, in case the message is delayed.
+            We emailed a sign-in link. It expires in 30 minutes. Save the URL below as a backup.
           </p>
         ) : mailState === "failed" ? (
           <p className="flash error">
@@ -60,8 +60,15 @@ export default async function PartyCreatedPage({
           </div>
         </div>
         <p className="hint">
-          Bookmark it. The secret in the URL is how you manage the party — there is still no login.
+          {mailConfigured()
+            ? "Save this link as a backup. You can also sign in from the email, or use Find my parties later."
+            : "Bookmark it. The secret in the URL is how you manage the party — there is still no login."}
         </p>
+        {mailConfigured() ? (
+          <p>
+            <Link href="/host/recover">Find my parties</Link>
+          </p>
+        ) : null}
         <p>
           <Link className="btn" href={`/e/${event.id}/manage?t=${encodeURIComponent(event.admin_token)}`}>
             Open dashboard

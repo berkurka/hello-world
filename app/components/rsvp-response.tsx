@@ -16,7 +16,7 @@ type Props = {
 export function RsvpResponse({ token, event, invitee, rsvp, openForm }: Props) {
   const [editing, setEditing] = useState(!rsvp || Boolean(openForm));
   const counts =
-    rsvp && rsvp.attending === 1
+    rsvp && (rsvp.attending === 1 || rsvp.attending === 2)
       ? [
           event.ask_adults ? `Adults: ${rsvp.adults}` : "",
           event.ask_kids ? `Kids: ${rsvp.kids}` : "",

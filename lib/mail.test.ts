@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mailConfigFrom, mailConfigured, mailFromHeader, providerErrorMessage } from "./mail";
+import type { EventRow, InviteeRow } from "./types";
+import { buildInviteMail, hostFromHeader, mailConfigFrom, mailConfigured, mailFromHeader, providerErrorMessage } from "./mail";
 
 const resend = {
   SMTP_HOST: "smtp.resend.com",
@@ -67,6 +68,38 @@ test("mail is not configured when neither SMTP nor Gmail is complete", () => {
   assert.equal(mailConfigured({}), false);
   assert.equal(mailConfigured({ SMTP_HOST: "smtp.resend.com", MAIL_FROM: "a@b.co" }), false);
   assert.equal(mailFromHeader({}), null);
+});
+
+test("invite mail is from the host via Partyz", () => {
+  assert.equal(hostFromHeader("Bernardo", resend), `"Bernardo via Partyz" <onboarding@resend.dev>`);
+  assert.equal(hostFromHeader("Bob\n\"via\"", resend), `"Bob via via Partyz" <onboarding@resend.dev>`);
+  assert.equal(hostFromHeader("  ", resend), `"Partyz" <onboarding@resend.dev>`);
+  assert.equal(hostFromHeader("Bernardo", {}), null);
+});
+
+test("invite messages reply to the host and preview the party", () => {
+  const event = {
+    title: "Maya's 7th Birthday",
+    host_name: "Bernardo",
+    host_email: "host@example.com",
+    starts_at: "2026-10-17T14:00",
+    ends_at: null,
+    location: "Riverside Park",
+    timezone: "America/New_York",
+  } as EventRow;
+  const invitee = { display_name: "Priya", token: "abc" } as InviteeRow;
+  const message = buildInviteMail({
+    event,
+    invitee,
+    rsvpLink: "https://example.com/rsvp/abc",
+  });
+  assert.equal(message.subject, "Bernardo invited you to Maya's 7th Birthday");
+  assert.equal(message.replyTo, "host@example.com");
+  assert.match(message.text, /Sat, Oct 17 · 2:00 PM · Riverside Park/);
+  assert.match(message.html, /display:none/);
+  assert.match(message.text, /\/rsvp\/abc\/event\.ics/);
+  assert.match(message.text, /calendar\.google\.com/);
+  assert.match(message.text, /maps/);
 });
 
 test("provider errors keep the SMTP response text", () => {

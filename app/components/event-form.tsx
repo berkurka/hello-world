@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { formatWhen, isEmail } from "@/lib/format";
 import { fieldKeyFromMessage, inspectPartyImage, partyImagePath } from "@/lib/party-image";
+import { eventVersion } from "@/lib/party-share";
 import type { EventRow } from "@/lib/types";
 
 export type EventDraft = {
@@ -37,6 +38,12 @@ function defaultEventDate() {
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
+}
+
+function splitEnds(event?: EventRow) {
+  const raw = event?.ends_at ?? "";
+  if (raw.includes("T")) return raw.split("T")[1]?.slice(0, 5) ?? "";
+  return "";
 }
 
 function splitStarts(event?: EventRow, draft?: EventDraft) {
@@ -90,6 +97,9 @@ export function EventForm({ event, draft, initialError, action, submitLabel, chi
   const [hostEmail, setHostEmail] = useState(draft?.hostEmail ?? event?.host_email ?? "");
   const [startsDate, setStartsDate] = useState(initial.date);
   const [startsTime, setStartsTime] = useState(initial.time);
+  const [endsTime, setEndsTime] = useState(splitEnds(event));
+  const [timezone, setTimezone] = useState(event?.timezone ?? "");
+  const [allowMaybe, setAllowMaybe] = useState(event ? event.allow_maybe !== 0 : true);
   const [askComment, setAskComment] = useState(
     draft?.askComment ?? (!event || event.ask_comment === 1),
   );
@@ -110,6 +120,9 @@ export function EventForm({ event, draft, initialError, action, submitLabel, chi
     hostEmail,
     startsDate,
     startsTime,
+    endsTime,
+    timezone,
+    allowMaybe,
     askComment,
     askAdults,
     askKids,
@@ -122,11 +135,24 @@ export function EventForm({ event, draft, initialError, action, submitLabel, chi
     hostEmail,
     startsDate,
     startsTime,
+    endsTime,
+    timezone,
+    allowMaybe,
     askComment,
     askAdults,
     askKids,
     askInfants,
   };
+
+  useEffect(() => {
+    if (timezone) return;
+    try {
+      const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (detected) setTimezone(detected);
+    } catch {
+      // Leave the zone empty. Older parties stay on floating local time.
+    }
+  }, [timezone]);
 
   useEffect(() => {
     if (!error) return;
@@ -179,6 +205,11 @@ export function EventForm({ event, draft, initialError, action, submitLabel, chi
     formData.set("hostName", nextHost);
     formData.set("startsDate", v.startsDate);
     formData.set("startsTime", v.startsTime);
+    if (v.endsTime) formData.set("endsTime", v.endsTime);
+    else formData.delete("endsTime");
+    if (v.timezone) formData.set("timezone", v.timezone);
+    if (v.allowMaybe) formData.set("allowMaybe", "on");
+    else formData.delete("allowMaybe");
     if (v.askComment) formData.set("askComment", "on");
     else formData.delete("askComment");
     if (v.askAdults) formData.set("askAdults", "on");
@@ -252,7 +283,22 @@ export function EventForm({ event, draft, initialError, action, submitLabel, chi
             }}
           />
         </label>
+        <label className="field">
+          <span>End time (optional)</span>
+          <input
+            name="endsTime"
+            type="time"
+            lang="en-CA"
+            autoComplete="off"
+            value={endsTime}
+            onChange={(e) => {
+              if (!e.target.value || isTime(e.target.value)) setEndsTime(e.target.value.slice(0, 5));
+            }}
+          />
+          <span className="hint">If you leave this blank, the calendar event lasts 3 hours.</span>
+        </label>
       </div>
+      <input type="hidden" name="timezone" value={timezone} />
       <label className="field">
         <span>Location or notes</span>
         <textarea
@@ -268,7 +314,7 @@ export function EventForm({ event, draft, initialError, action, submitLabel, chi
         {hasImage && event ? (
           <img
             className="image-preview"
-            src={partyImagePath(event.id)}
+            src={partyImagePath(event.id, eventVersion(event))}
             alt="Current party image"
           />
         ) : null}
@@ -316,12 +362,21 @@ export function EventForm({ event, draft, initialError, action, submitLabel, chi
             placeholder="you@example.com"
             autoComplete="email"
           />
-          <span className="hint">We'll email a dashboard link. No password, no account.</span>
+          <span className="hint">We&apos;ll email a sign-in link that expires in 30 minutes. No password.</span>
         </label>
       ) : null}
       <fieldset className="toggles">
         <legend>RSVP fields for invitees</legend>
-        <p className="hint">Yes / no is always shown. Turn on anything else you want to collect.</p>
+        <p className="hint">Yes and no are always shown. Maybe is on unless you turn it off.</p>
+        <label className="check">
+          <input
+            name="allowMaybe"
+            type="checkbox"
+            checked={allowMaybe}
+            onChange={(e) => setAllowMaybe(e.target.checked)}
+          />
+          Allow Maybe
+        </label>
         <label className="check">
           <input
             name="askComment"

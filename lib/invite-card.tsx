@@ -9,10 +9,11 @@ export type InviteCardProps = {
   imageSrc?: string | null;
 };
 
-export function inviteCardImage(props: InviteCardProps) {
+export function inviteCardImage(props: InviteCardProps, size: "card" | "og" = "card") {
+  const og = size === "og";
   return new ImageResponse(<InviteCard {...props} />, {
-    width: 800,
-    height: 500,
+    width: og ? 1200 : 800,
+    height: og ? 630 : 500,
   });
 }
 

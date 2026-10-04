@@ -32,6 +32,19 @@ export function normalizeStoredEmail(value: string | null | undefined) {
 
 export function attendingLabel(value: number | null) {
   if (value === 1) return "Yes";
+  if (value === 2) return "Maybe";
   if (value === 0) return "No";
   return "Pending";
+}
+
+/** Yes and Maybe keep the guest counts. No and unanswered do not. */
+export function storesHeadcount(attending: number) {
+  return attending === 1 || attending === 2;
+}
+
+export function parseAttending(raw: string, allowMaybe: boolean): 0 | 1 | 2 | null {
+  if (raw === "yes") return 1;
+  if (raw === "no") return 0;
+  if (raw === "maybe" && allowMaybe) return 2;
+  return null;
 }

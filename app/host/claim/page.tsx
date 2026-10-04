@@ -1,4 +1,6 @@
+import { RecoveryLinks } from "@/app/components/recovery-links";
 import { claimHostDashboard } from "@/lib/db";
+import { mailConfigured } from "@/lib/mail";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +25,7 @@ export default async function HostClaimPage({
           That claim link is invalid or has expired. If you still have the dashboard URL from when
           the party was created, use that instead.
         </p>
+        <RecoveryLinks mailOn={mailConfigured()} />
       </div>
     </main>
   );
