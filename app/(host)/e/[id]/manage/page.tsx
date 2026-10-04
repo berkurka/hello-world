@@ -51,8 +51,8 @@ export default async function ManageEventPage({
     email: row.email,
     email2: row.email2,
     status: rsvpStatus(row.attending),
-    counts: row.attending === 1 ? countSummary(event, row) : "—",
-    comment: event.ask_comment ? (row.comment?.trim() ? row.comment : "—") : "",
+    counts: row.attending === 1 ? countSummary(event, row) : "",
+    comment: event.ask_comment && row.comment?.trim() ? row.comment : "",
     invited: formatInvitedAt(row.invited_at),
     url: rsvpUrl(row.token),
   }));

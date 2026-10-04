@@ -204,7 +204,7 @@ export async function sendHostClaimEmail(opts: {
       <div style="font-family:Arial,Helvetica,sans-serif;color:#241910;max-width:640px">
         <p>Hi ${escapeHtml(event.host_name)},</p>
         <p>Your party <strong>${escapeHtml(event.title)}</strong> is ready.</p>
-        <p><a href="${claimLink}" style="display:inline-block;background:#c81e5b;color:#fff;padding:14px 22px;text-decoration:none;border-radius:10px;font-weight:700">Open dashboard</a></p>
+        <p><a href="${claimLink}" style="display:inline-block;background:#8b2942;color:#fff;padding:14px 22px;text-decoration:none;border-radius:10px;font-weight:700">Open dashboard</a></p>
         <p style="color:#6a5648">Or paste this link: ${escapeHtml(claimLink)}</p>
         <p style="color:#6a5648">This link works until you open it, or for 7 days. After that, use the dashboard link you saved when you created the party.</p>
       </div>

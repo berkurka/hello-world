@@ -175,6 +175,16 @@ export function EventForm({
     scrollToIssue(invalidKey);
   }, [error, invalidKey, scrollTick]);
 
+  useEffect(() => {
+    const scrollToCreate = () => {
+      if (window.location.hash !== "#create") return;
+      document.getElementById("create")?.scrollIntoView({ block: "start" });
+    };
+    scrollToCreate();
+    window.addEventListener("hashchange", scrollToCreate);
+    return () => window.removeEventListener("hashchange", scrollToCreate);
+  }, []);
+
   function showIssue(message: string, key: FieldKey | "" = fieldKeyFromMessage(message)) {
     setInvalidKey(key);
     setError(message);
@@ -268,30 +278,32 @@ export function EventForm({
           {error}
         </p>
       ) : null}
-      <div className={tab === "preview" ? "composer show-preview" : "composer"}>
+      <div className={`${tab === "preview" ? "composer show-preview" : "composer"}${isCreate ? " composer-create" : ""}`}>
         {showPreview ? (
-          <div className="composer-tabs" role="tablist" aria-label="Create or preview">
+          <div className="composer-tabs segmented" role="tablist" aria-label="Create or preview">
             <button
-              className={tab === "edit" ? "btn" : "btn ghost"}
               type="button"
               role="tab"
+              id="create-tab-details"
               aria-selected={tab === "edit"}
+              aria-controls="create-panel-details"
               onClick={() => setTab("edit")}
             >
               Details
             </button>
             <button
-              className={tab === "preview" ? "btn" : "btn ghost"}
               type="button"
               role="tab"
+              id="create-tab-preview"
               aria-selected={tab === "preview"}
+              aria-controls="create-panel-preview"
               onClick={() => setTab("preview")}
             >
               Preview
             </button>
           </div>
         ) : null}
-        <div className="composer-form stack">
+        <div className="composer-form stack" id="create-panel-details" role={showPreview ? "tabpanel" : undefined} aria-labelledby={showPreview ? "create-tab-details" : undefined}>
           <label className={invalidKey === "title" ? "field is-invalid" : "field"}>
             <span>Party title</span>
             <input
@@ -339,7 +351,7 @@ export function EventForm({
             </label>
           </div>
           <label className="field">
-            <span>End time</span>
+            <span>End time (optional)</span>
             <input
               className="control"
               type="time"
@@ -347,7 +359,6 @@ export function EventForm({
               value={endsTime}
               onChange={(e) => setEndsTime(e.target.value.slice(0, 5))}
             />
-            <span className="hint">Optional.</span>
           </label>
           <label className={invalidKey === "hostName" ? "field is-invalid" : "field"}>
             <span>Your name</span>
@@ -475,7 +486,7 @@ export function EventForm({
           </div>
         </div>
         {showPreview ? (
-          <aside className="composer-preview stack" aria-label="Invite preview">
+          <aside className="composer-preview stack" id="create-panel-preview" role="tabpanel" aria-labelledby="create-tab-preview" aria-label="Invite preview">
             <InviteCardView
               theme={theme}
               title={title.trim() || "Your party"}

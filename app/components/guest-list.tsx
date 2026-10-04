@@ -39,6 +39,17 @@ export function GuestList({
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | RsvpStatus>("all");
   const available = FILTERS.filter((status) => guests.some((guest) => guest.status === status));
+  const counts = useMemo(() => {
+    const tally: Record<"all" | RsvpStatus, number> = {
+      all: guests.length,
+      going: 0,
+      maybe: 0,
+      declined: 0,
+      waiting: 0,
+    };
+    for (const guest of guests) tally[guest.status] += 1;
+    return tally;
+  }, [guests]);
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     return guests.filter((guest) => {
@@ -65,12 +76,12 @@ export function GuestList({
           onChange={(e) => setQuery(e.target.value)}
         />
       </label>
-      <div className="filters" role="group" aria-label="Filter by reply">
-        <FilterButton current={filter} value="all" onClick={setFilter}>
+      <div className="filters segmented" role="tablist" aria-label="Filter by reply">
+        <FilterButton current={filter} value="all" count={counts.all} onClick={setFilter}>
           All
         </FilterButton>
         {available.map((status) => (
-          <FilterButton key={status} current={filter} value={status} onClick={setFilter}>
+          <FilterButton key={status} current={filter} value={status} count={counts[status]} onClick={setFilter}>
             {rsvpStatusLabel(status)}
           </FilterButton>
         ))}
@@ -89,8 +100,8 @@ export function GuestList({
               <StatusChip status={guest.status} />
             </div>
             {guest.counts ? <p>{guest.counts}</p> : null}
-            <p>{guest.comment}</p>
-            <p className="hint">{guest.invited}</p>
+            {guest.comment ? <p>{guest.comment}</p> : null}
+            <InviteStatus invited={guest.invited} />
             <GuestActions
               guest={guest}
               partyTitle={partyTitle}
@@ -131,9 +142,11 @@ export function GuestList({
                 <td>
                   <StatusChip status={guest.status} />
                 </td>
-                <td>{guest.counts || "—"}</td>
+                <td>{guest.counts}</td>
                 <td>{guest.comment}</td>
-                <td>{guest.invited}</td>
+                <td>
+                  <InviteStatus invited={guest.invited} />
+                </td>
                 <td>
                   <GuestActions
                     guest={guest}
@@ -156,20 +169,28 @@ export function GuestList({
 function FilterButton({
   current,
   value,
+  count,
   onClick,
   children,
 }: {
   current: string;
   value: "all" | RsvpStatus;
+  count: number;
   onClick: (value: "all" | RsvpStatus) => void;
   children: React.ReactNode;
 }) {
   const on = current === value;
   return (
-    <button className={on ? "btn" : "btn ghost"} type="button" aria-pressed={on} onClick={() => onClick(value)}>
+    <button type="button" role="tab" aria-selected={on} onClick={() => onClick(value)}>
       {children}
+      <span className="filter-count">{count}</span>
     </button>
   );
+}
+
+function InviteStatus({ invited }: { invited: string }) {
+  if (invited === "Not sent") return <span className="chip waiting">Not sent</span>;
+  return <span className="hint">{invited}</span>;
 }
 
 function GuestActions({
@@ -191,7 +212,8 @@ function GuestActions({
     <div className="actions">
       <CopyButton text={guest.url} label="Copy link" className="btn" />
       <a className="btn ghost" href={textInviteHref(partyTitle, guest.url)}>
-        Text
+        <SmsIcon />
+        Text link
       </a>
       <ShareLinkButton
         title={partyTitle}
@@ -211,5 +233,13 @@ function GuestActions({
         </form>
       ) : null}
     </div>
+  );
+}
+
+function SmsIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M21 12a8 8 0 0 1-8 8H7l-4 3V12a8 8 0 1 1 18 0z" />
+    </svg>
   );
 }

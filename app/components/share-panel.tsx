@@ -30,7 +30,7 @@ export function SharePanel({
           <CopyButton text={shareUrl} label="Copy invite link" className="btn" />
         </div>
       ) : (
-        <p className="hint">Each guest has their own link. Copy it from their card.</p>
+        <p className="hint">Copy each guest&apos;s link to share.</p>
       )}
       {canEmail && guestCount > 0 && unsent > 0 ? (
         <form action={sendAllUnsent}>
@@ -43,7 +43,6 @@ export function SharePanel({
           />
         </form>
       ) : null}
-      {!canEmail ? <p className="hint">Email sending isn&apos;t available. Copy a link to invite someone.</p> : null}
       {children}
     </section>
   );

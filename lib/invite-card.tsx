@@ -50,26 +50,32 @@ function OgInviteCard({
   const tokens = themeById(theme);
   const scale = height / INVITE_CARD_HEIGHT;
   const px = (value: number) => Math.round(value * scale);
-  const titleSize = px(title.length > 36 ? 54 : title.length > 22 ? 64 : 76);
+  const titleSize = px(title.length > 36 ? 64 : title.length > 22 ? 76 : 92);
   const font = displayFontFamily(tokens.display);
   const pad = px(28);
+  const innerW = width - pad * 2;
+  const innerH = height - pad * 2;
+  const bandH = imageSrc ? px(220) : px(132);
   return (
     <div
       style={{
-        width: "100%",
-        height: "100%",
+        width,
+        height,
         display: "flex",
+        boxSizing: "border-box",
         backgroundColor: tokens.frame,
         padding: pad,
         fontFamily: "Inter",
+        overflow: "hidden",
       }}
     >
       <div
         style={{
-          width: "100%",
-          height: "100%",
+          width: innerW,
+          height: innerH,
           display: "flex",
           flexDirection: "column",
+          boxSizing: "border-box",
           backgroundColor: tokens.paper,
           overflow: "hidden",
           borderRadius: px(18),
@@ -79,89 +85,91 @@ function OgInviteCard({
           <img
             src={imageSrc}
             alt=""
-            width={width - pad * 2}
-            height={px(250)}
-            style={{ objectFit: "cover", width: width - pad * 2, height: px(250) }}
+            width={innerW}
+            height={bandH}
+            style={{ objectFit: "cover", width: innerW, height: bandH }}
           />
         ) : (
-          <PatternBand theme={tokens} height={px(148)} />
+          <PatternBand theme={tokens} height={bandH} width={innerW} />
         )}
         <div
           style={{
             display: "flex",
             flexDirection: "column",
-            justifyContent: "space-between",
-            flexGrow: 1,
-            padding: `${px(36)}px ${px(48)}px ${px(40)}px`,
+            padding: `${px(28)}px ${px(48)}px ${px(32)}px`,
           }}
         >
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            <div
-              style={{
-                display: "flex",
-                color: tokens.accent,
-                fontSize: px(22),
-                letterSpacing: px(4),
-                textTransform: "uppercase",
-                fontWeight: 600,
-              }}
-            >
-              You&apos;re invited
-            </div>
-            <div
-              style={{
-                display: "flex",
-                color: tokens.ink,
-                fontFamily: font,
-                fontSize: titleSize,
-                fontWeight: 600,
-                marginTop: px(12),
-                lineHeight: 1.05,
-                letterSpacing: -1,
-              }}
-            >
-              {title}
-            </div>
-            {guestName ? (
-              <div
-                style={{
-                  display: "flex",
-                  color: tokens.muted,
-                  fontSize: px(28),
-                  marginTop: px(14),
-                }}
-              >
-                {`For ${guestName}`}
-              </div>
-            ) : null}
+          <div
+            style={{
+              display: "flex",
+              color: tokens.accent,
+              fontSize: px(22),
+              letterSpacing: px(4),
+              textTransform: "uppercase",
+              fontWeight: 600,
+            }}
+          >
+            You&apos;re invited
           </div>
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            <div style={{ display: "flex", color: tokens.ink, fontSize: px(30), fontWeight: 600 }}>
-              {when}
-            </div>
-            {location ? (
-              <div
-                style={{
-                  display: "flex",
-                  color: tokens.muted,
-                  fontSize: px(26),
-                  marginTop: px(8),
-                }}
-              >
-                {location}
-              </div>
-            ) : null}
+          <div
+            style={{
+              display: "flex",
+              color: tokens.ink,
+              fontFamily: font,
+              fontSize: titleSize,
+              fontWeight: 600,
+              marginTop: px(10),
+              lineHeight: 1.02,
+              letterSpacing: -1,
+            }}
+          >
+            {title}
+          </div>
+          {guestName ? (
             <div
               style={{
                 display: "flex",
-                color: tokens.accent,
-                fontSize: px(24),
-                marginTop: px(22),
-                fontWeight: 600,
+                color: tokens.muted,
+                fontSize: px(28),
+                marginTop: px(10),
               }}
             >
-              {`Hosted by ${hostName}`}
+              {`For ${guestName}`}
             </div>
+          ) : null}
+          <div
+            style={{
+              display: "flex",
+              color: tokens.ink,
+              fontSize: px(30),
+              fontWeight: 600,
+              marginTop: px(18),
+            }}
+          >
+            {when}
+          </div>
+          {location ? (
+            <div
+              style={{
+                display: "flex",
+                color: tokens.muted,
+                fontSize: px(26),
+                marginTop: px(8),
+              }}
+            >
+              {location}
+            </div>
+          ) : null}
+          <div
+            style={{
+              display: "flex",
+              color: tokens.accent,
+              fontSize: px(24),
+              marginTop: px(16),
+              fontWeight: 600,
+            }}
+          >
+            {`Hosted by ${hostName}`}
           </div>
         </div>
       </div>
@@ -169,26 +177,30 @@ function OgInviteCard({
   );
 }
 
-function PatternBand({ theme, height }: { theme: InviteTheme; height: number }) {
-  const colors = patternColors(theme);
+function PatternBand({ theme, height, width }: { theme: InviteTheme; height: number; width: number }) {
+  const palette = patternColors(theme);
+  const count = Math.max(14, Math.round(width / 72));
+  const dots = Array.from({ length: count }, (_, index) => palette[index % palette.length]);
   return (
     <div
       style={{
         display: "flex",
         alignItems: "center",
+        justifyContent: "space-between",
+        boxSizing: "border-box",
+        width,
         height,
         backgroundColor: theme.dark ? "#221c16" : theme.soft,
-        paddingLeft: 36,
-        paddingRight: 36,
-        gap: 14,
+        paddingLeft: 40,
+        paddingRight: 40,
       }}
     >
-      {colors.map((color, index) => (
+      {dots.map((color, index) => (
         <div
           key={`${color}-${index}`}
           style={{
-            width: index % 2 === 0 ? 22 : 14,
-            height: index % 2 === 0 ? 22 : 14,
+            width: index % 3 === 0 ? 22 : 14,
+            height: index % 3 === 0 ? 22 : 14,
             borderRadius: 20,
             backgroundColor: color,
           }}

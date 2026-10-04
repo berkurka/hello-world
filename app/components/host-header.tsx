@@ -11,9 +11,9 @@ export function HostHeader() {
         <Link className="nav-link" href={MY_PARTIES_PATH}>
           My parties
         </Link>
-        <Link className="btn" href="/#create">
-          New party
-        </Link>
+        <a className="btn" href="/#create">
+          Create an invite
+        </a>
       </nav>
     </header>
   );

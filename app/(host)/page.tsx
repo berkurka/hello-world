@@ -51,7 +51,7 @@ export default async function Home({
           </p>
         </div>
         <InviteCardView
-          theme="confetti"
+          theme="classic"
           title="Maya's 7th Birthday"
           guestName="Priya"
           when="Sat, Oct 17 · 2:00 PM"

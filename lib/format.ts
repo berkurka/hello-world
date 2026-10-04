@@ -105,8 +105,11 @@ export function countSummary(
   row: { adults: number | null; kids: number | null; infants: number | null },
 ) {
   const parts: string[] = [];
-  if (event.ask_adults) parts.push(`${row.adults ?? 0} ${row.adults === 1 ? "adult" : "adults"}`);
-  if (event.ask_kids) parts.push(`${row.kids ?? 0} ${row.kids === 1 ? "kid" : "kids"}`);
-  if (event.ask_infants) parts.push(`${row.infants ?? 0} ${row.infants === 1 ? "baby" : "babies"}`);
+  const adults = row.adults ?? 0;
+  const kids = row.kids ?? 0;
+  const infants = row.infants ?? 0;
+  if (event.ask_adults && adults > 0) parts.push(`${adults} ${adults === 1 ? "adult" : "adults"}`);
+  if (event.ask_kids && kids > 0) parts.push(`${kids} ${kids === 1 ? "kid" : "kids"}`);
+  if (event.ask_infants && infants > 0) parts.push(`${infants} ${infants === 1 ? "baby" : "babies"}`);
   return parts.join(" · ");
 }

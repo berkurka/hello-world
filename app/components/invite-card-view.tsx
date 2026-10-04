@@ -1,5 +1,11 @@
 import type { CSSProperties } from "react";
-import { themeById, type InviteTheme } from "@/lib/themes";
+import { themeById, type DisplayFont, type InviteTheme } from "@/lib/themes";
+
+function displayStack(display: DisplayFont) {
+  if (display === "fredoka") return "var(--font-fredoka), var(--font-inter), sans-serif";
+  if (display === "inter") return "var(--font-inter), sans-serif";
+  return "var(--font-fraunces), Georgia, serif";
+}
 
 export function themeVars(theme: InviteTheme): CSSProperties {
   return {
@@ -12,6 +18,7 @@ export function themeVars(theme: InviteTheme): CSSProperties {
     "--accent": theme.accent,
     "--accent-ink": theme.accentInk,
     "--accent-soft": theme.soft,
+    "--font-display": displayStack(theme.display),
     "--guest-bg": theme.dark ? theme.frame : "#f7f3ee",
     "--guest-ink": theme.ink,
     "--guest-muted": theme.muted,
@@ -32,6 +39,7 @@ export function InviteCardView({
   imageSrc,
   theme,
   hero = false,
+  compact = false,
 }: {
   title: string;
   guestName?: string;
@@ -41,6 +49,8 @@ export function InviteCardView({
   imageSrc?: string | null;
   theme: InviteTheme | string;
   hero?: boolean;
+  /** RSVP card: eyebrow, title, and guest name. Details live in the rows below. */
+  compact?: boolean;
 }) {
   const tokens = typeof theme === "string" ? themeById(theme) : theme;
   return (
@@ -60,9 +70,13 @@ export function InviteCardView({
             <p className="invite-kicker">You&apos;re invited</p>
             <h2 className="invite-title">{title}</h2>
             {guestName ? <p className="invite-for">For {guestName}</p> : null}
-            <p className="invite-when">{when}</p>
-            {place ? <p className="invite-where">{place}</p> : null}
-            <p className="invite-host">Hosted by {hostName}</p>
+            {compact ? null : (
+              <>
+                <p className="invite-when">{when}</p>
+                {place ? <p className="invite-where">{place}</p> : null}
+                <p className="invite-host">Hosted by {hostName}</p>
+              </>
+            )}
           </div>
         </div>
       </div>

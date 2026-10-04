@@ -39,6 +39,7 @@ export function GuestInvite({
       <main className="guest-wrap">
         <InviteCardView
           hero
+          compact
           theme={theme}
           title={event.title}
           guestName={guestName}
@@ -47,9 +48,6 @@ export function GuestInvite({
           hostName={event.host_name}
           imageSrc={imageSrc}
         />
-        <p className="lede" style={{ margin: "1rem 0 0.25rem", fontSize: "1.05rem" }}>
-          Hi {guestName}, you&apos;re invited.
-        </p>
         <PartyFacts
           when={formatWhen(event.starts_at)}
           place={event.location}
