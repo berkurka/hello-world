@@ -54,6 +54,21 @@ test("startup migration adds missing host and email2 columns and keeps old invit
   assert.ok(eventNames.includes("host_claim_token"));
   assert.ok(eventNames.includes("host_claimed_at"));
   assert.ok(eventNames.includes("party_image_mime"));
+  assert.ok(eventNames.includes("theme"));
+  assert.ok(eventNames.includes("notes"));
+  assert.ok(eventNames.includes("ends_at"));
+  assert.ok(eventNames.includes("timezone"));
+
+  const migrated = await db.query<{
+    theme: string;
+    notes: string;
+    ends_at: string | null;
+    timezone: string | null;
+  }>("SELECT theme, notes, ends_at, timezone FROM events WHERE id = ?", ["e1"]);
+  assert.equal(migrated[0]?.theme, "classic");
+  assert.equal(migrated[0]?.notes, "");
+  assert.equal(migrated[0]?.ends_at, null);
+  assert.equal(migrated[0]?.timezone, null);
 
   const old = await db.query<{ email: string; email2: string | null }>(
     "SELECT email, email2 FROM invitees WHERE id = ?",

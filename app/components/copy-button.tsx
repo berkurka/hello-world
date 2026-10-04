@@ -1,13 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export function CopyButton({
   text,
   label = "Copy",
+  className,
 }: {
   text: string;
   label?: string;
+  className?: string;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -30,8 +32,40 @@ export function CopyButton({
   }
 
   return (
-    <button className="btn ghost small" type="button" onClick={copy}>
+    <button className={className ?? "btn ghost"} type="button" onClick={copy}>
       {copied ? "Copied" : label}
     </button>
   );
+}
+
+export function ShareLinkButton({
+  title,
+  url,
+  text,
+}: {
+  title: string;
+  url: string;
+  text: string;
+}) {
+  const [canShare, setCanShare] = useState(false);
+  useEffect(() => {
+    setCanShare(typeof navigator.share === "function");
+  }, []);
+  if (!canShare) return null;
+  return (
+    <button
+      className="btn ghost"
+      type="button"
+      onClick={() => {
+        navigator.share({ title, text, url }).catch(() => {});
+      }}
+    >
+      Share
+    </button>
+  );
+}
+
+export function textInviteHref(title: string, url: string) {
+  const body = `You're invited to ${title}. RSVP: ${url}`;
+  return `sms:?&body=${encodeURIComponent(body)}`;
 }

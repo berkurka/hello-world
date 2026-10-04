@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { hostClaimUrl, rsvpUrl } from "@/lib/app-url";
 import {
   deleteEventImage,
@@ -16,7 +16,9 @@ import {
   saveEventImage,
 } from "@/lib/db";
 import { asBool, asCount, isEmail, normalizeStoredEmail } from "@/lib/format";
-import { appendSendError, familyInviteNotice, unsentBatchNotice } from "@/lib/invite-delivery";
+import { goingNeedsPeople } from "@/lib/party-stats";
+import { themeById } from "@/lib/themes";
+import { appendSendError, familyInviteNotice, friendlyMailError, unsentBatchNotice } from "@/lib/invite-delivery";
 import { newId, newToken } from "@/lib/ids";
 import {
   applyExistingEmails,
@@ -39,7 +41,7 @@ async function requireOrganizer(formData: FormData) {
   const eventId = required(formData, "eventId");
   const token = required(formData, "t");
   const event = await getEventForOrganizer(eventId, token);
-  if (!event) throw new Error("Event not found");
+  if (!event) notFound();
   return event;
 }
 
@@ -73,18 +75,33 @@ function eventFields(formData: FormData) {
   const startsTimeRaw = firstMatch(formData, "startsTime", /^\d{2}:\d{2}/);
   const startsTime = startsTimeRaw.slice(0, 5);
   const startsAt = startsDate && startsTime ? `${startsDate}T${startsTime}` : "";
+  const endsTimeRaw = firstMatch(formData, "endsTime", /^\d{2}:\d{2}/);
+  const endsTime = endsTimeRaw.slice(0, 5);
+  const endsAt = startsDate && endsTime ? `${startsDate}T${endsTime}` : "";
   const location = required(formData, "location");
+  const notes = required(formData, "notes").slice(0, 2000);
   const hostName = required(formData, "hostName");
+  const timezoneRaw = required(formData, "timezone");
+  const timezone = /^[A-Za-z0-9_+\-/]{1,80}$/.test(timezoneRaw) ? timezoneRaw : "";
   return {
     title,
     startsAt,
+    endsAt,
     location,
+    notes,
     hostName,
+    timezone,
+    theme: themeById(required(formData, "theme")).id,
     askComment: asBool(formData.get("askComment")) ? 1 : 0,
     askAdults: asBool(formData.get("askAdults")) ? 1 : 0,
     askKids: asBool(formData.get("askKids")) ? 1 : 0,
     askInfants: asBool(formData.get("askInfants")) ? 1 : 0,
   };
+}
+
+function endBeforeStart(startsAt: string, endsAt: string) {
+  if (!endsAt) return false;
+  return endsAt <= startsAt;
 }
 
 export async function createEvent(formData: FormData) {
@@ -95,6 +112,9 @@ export async function createEvent(formData: FormData) {
   }
   if (!fields.startsAt) {
     return { error: "Date and time are required." };
+  }
+  if (endBeforeStart(fields.startsAt, fields.endsAt)) {
+    return { error: "End time must be after the start time." };
   }
   if (!fields.hostName) {
     return { error: "Host name is required." };
@@ -108,14 +128,16 @@ export async function createEvent(formData: FormData) {
   const adminToken = newToken();
   const hostClaimToken = newToken();
   await run(
-    `INSERT INTO events (id, admin_token, title, starts_at, location, host_name, host_email, host_claim_token, host_claimed_at, ask_comment, ask_adults, ask_kids, ask_infants, party_image_mime, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL, ?)`,
+    `INSERT INTO events (id, admin_token, title, starts_at, ends_at, location, notes, host_name, host_email, host_claim_token, host_claimed_at, ask_comment, ask_adults, ask_kids, ask_infants, party_image_mime, theme, timezone, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL, ?, ?, ?)`,
     [
       id,
       adminToken,
       fields.title,
       fields.startsAt,
+      fields.endsAt || null,
       fields.location,
+      fields.notes,
       fields.hostName,
       hostEmail,
       hostClaimToken,
@@ -123,6 +145,8 @@ export async function createEvent(formData: FormData) {
       fields.askAdults,
       fields.askKids,
       fields.askInfants,
+      fields.theme,
+      fields.timezone || null,
       new Date().toISOString(),
     ],
   );
@@ -131,7 +155,6 @@ export async function createEvent(formData: FormData) {
   }
 
   let mail: "sent" | "skipped" | "failed" = "skipped";
-  let mailError = "";
   if (mailConfigured()) {
     try {
       await sendHostClaimEmail({
@@ -150,6 +173,10 @@ export async function createEvent(formData: FormData) {
           ask_kids: fields.askKids,
           ask_infants: fields.askInfants,
           party_image_mime: image.kind === "file" ? image.mime : null,
+          theme: fields.theme,
+          notes: fields.notes,
+          ends_at: fields.endsAt || null,
+          timezone: fields.timezone || null,
           created_at: new Date().toISOString(),
         },
         hostEmail,
@@ -158,13 +185,12 @@ export async function createEvent(formData: FormData) {
       mail = "sent";
     } catch (err) {
       mail = "failed";
-      mailError = providerErrorMessage(err);
+      console.error("Host claim email failed:", providerErrorMessage(err));
     }
   }
 
-  const created = new URLSearchParams({ t: adminToken, mail });
-  if (mailError) created.set("mailError", mailError);
-  redirect(`/e/${id}/created?${created.toString()}`);
+  const created = new URLSearchParams({ t: adminToken, welcome: "1", mail });
+  redirect(`/e/${id}/manage?${created.toString()}`);
 }
 
 export async function updateEvent(formData: FormData) {
@@ -176,23 +202,30 @@ export async function updateEvent(formData: FormData) {
   if (!fields.startsAt) {
     return { error: "Date and time are required." };
   }
+  if (endBeforeStart(fields.startsAt, fields.endsAt)) {
+    return { error: "End time must be after the start time." };
+  }
   if (!fields.hostName) {
     return { error: "Host name is required." };
   }
   const image = await readPartyImageInput(formData);
   if (image.kind === "error") return { error: image.error };
   await run(
-    `UPDATE events SET title = ?, starts_at = ?, location = ?, host_name = ?, ask_comment = ?, ask_adults = ?, ask_kids = ?, ask_infants = ?
+    `UPDATE events SET title = ?, starts_at = ?, ends_at = ?, location = ?, notes = ?, host_name = ?, ask_comment = ?, ask_adults = ?, ask_kids = ?, ask_infants = ?, theme = ?, timezone = COALESCE(?, timezone)
      WHERE id = ?`,
     [
       fields.title,
       fields.startsAt,
+      fields.endsAt || null,
       fields.location,
+      fields.notes,
       fields.hostName,
       fields.askComment,
       fields.askAdults,
       fields.askKids,
       fields.askInfants,
+      fields.theme,
+      fields.timezone || null,
       event.id,
     ],
   );
@@ -279,9 +312,8 @@ async function deliverInvite(eventId: string, inviteeId: string) {
   const invitee = invitees.find((row) => row.id === inviteeId);
   if (!invitee) throw new Error("Invitee not found");
   if (!mailConfigured()) {
-    throw new Error(
-      "Email is not configured. Copy the RSVP link below, or set SMTP_HOST, SMTP_USER, SMTP_PASS, and MAIL_FROM.",
-    );
+    console.error("Email is not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASS, and MAIL_FROM.");
+    throw new Error("Email sending isn't available right now. Copy the link to share the invite.");
   }
   const delivery = await sendInviteEmail({
     event,
@@ -304,8 +336,9 @@ export async function sendInvite(formData: FormData) {
   try {
     delivery = await deliverInvite(event.id, inviteeId);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Could not send invite.";
-    redirect(`/e/${event.id}/manage?t=${event.admin_token}&error=` + encodeURIComponent(message));
+    redirect(
+      `/e/${event.id}/manage?t=${event.admin_token}&error=` + encodeURIComponent(friendlyMailError(err)),
+    );
   }
   revalidatePath(`/e/${event.id}/manage`);
   if (delivery.sent.length === 0) {
@@ -338,7 +371,7 @@ export async function sendAllUnsent(formData: FormData) {
       failed.push(...delivery.failed);
       if (delivery.error) errors.push(delivery.error);
     } catch (err) {
-      stopped = err instanceof Error ? err.message : "Could not send invites.";
+      stopped = friendlyMailError(err);
       break;
     }
   }
@@ -356,19 +389,23 @@ export async function sendAllUnsent(formData: FormData) {
 export async function saveRsvp(formData: FormData) {
   const token = required(formData, "token");
   const invitee = await getInviteeByToken(token);
-  if (!invitee) redirect("/");
+  if (!invitee) notFound();
   const event = await getEvent(invitee.event_id);
-  if (!event) redirect("/");
+  if (!event) notFound();
 
   const attendingRaw = required(formData, "attending");
+  // "maybe" is reserved for the Maybe RSVP. This action still accepts only yes or no.
   if (attendingRaw !== "yes" && attendingRaw !== "no") {
-    redirect(`/rsvp/${token}?error=` + encodeURIComponent("Please choose yes or no."));
+    redirect(`/rsvp/${token}?error=` + encodeURIComponent("Please choose Going or Can't go."));
   }
   const attending = attendingRaw === "yes" ? 1 : 0;
   const comment = event.ask_comment ? String(formData.get("comment") ?? "").trim() : "";
   const adults = attending && event.ask_adults ? asCount(formData.get("adults")) : 0;
   const kids = attending && event.ask_kids ? asCount(formData.get("kids")) : 0;
   const infants = attending && event.ask_infants ? asCount(formData.get("infants")) : 0;
+  if (attending === 1 && goingNeedsPeople(event, adults, kids, infants)) {
+    redirect(`/rsvp/${token}?error=` + encodeURIComponent("Add at least one person."));
+  }
 
   const existing = await getRsvp(invitee.id);
   const now = new Date().toISOString();
@@ -385,5 +422,5 @@ export async function saveRsvp(formData: FormData) {
     );
   }
   revalidatePath(`/rsvp/${token}`);
-  redirect(`/rsvp/${token}?done=1`);
+  redirect(`/rsvp/${token}`);
 }
