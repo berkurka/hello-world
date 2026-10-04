@@ -43,6 +43,7 @@ export function SharePanel({
           />
         </form>
       ) : null}
+      {!canEmail ? <p className="hint">Email isn&apos;t set up, so send buttons stay hidden.</p> : null}
       {children}
     </section>
   );

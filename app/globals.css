@@ -412,7 +412,16 @@ button.btn:disabled {
   min-width: 0;
   padding: 4px;
   border-radius: 999px;
-  background: #efe6dc;
+  background-color: #efe6dc;
+  background-image:
+    linear-gradient(to right, #efe6dc 20%, rgba(239, 230, 220, 0)),
+    linear-gradient(to left, #efe6dc 20%, rgba(239, 230, 220, 0)),
+    linear-gradient(to right, rgba(36, 25, 16, 0.38), rgba(36, 25, 16, 0)),
+    linear-gradient(to left, rgba(36, 25, 16, 0.38), rgba(36, 25, 16, 0));
+  background-repeat: no-repeat;
+  background-position: left center, right center, left center, right center;
+  background-size: 36px 100%, 36px 100%, 22px 100%, 22px 100%;
+  background-attachment: local, local, scroll, scroll;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -700,6 +709,11 @@ button.btn:disabled {
   display: grid;
   gap: 1rem;
   margin-top: 1rem;
+  min-width: 0;
+}
+
+.dash-grid > * {
+  min-width: 0;
 }
 
 @media (min-width: 960px) {
@@ -1213,7 +1227,7 @@ th {
   right: 0.75rem;
   left: auto;
   bottom: auto;
-  width: min(240px, calc(100% - 1.5rem));
+  width: min(200px, calc(100% - 2.75rem));
   z-index: 50;
   display: flex;
   flex-direction: column;

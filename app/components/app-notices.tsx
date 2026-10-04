@@ -28,7 +28,8 @@ export function useWelcome() {
 
 type Toast = { id: number; kind: "ok" | "error"; text: string };
 
-const DROP = ["error", "notice", "done", "welcome", "mail", "mailError"];
+const DROP = ["error", "notice", "done", "welcome", "mail"];
+const TOAST_MS = 4000;
 
 export function AppNotices() {
   const params = useSearchParams();
@@ -36,6 +37,14 @@ export function AppNotices() {
   const pathname = usePathname();
   const [toasts, setToasts] = useState<Toast[]>([]);
   const consumed = useRef<string | null>(null);
+  const timers = useRef<number[]>([]);
+
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      pending.forEach((id) => window.clearTimeout(id));
+    };
+  }, []);
 
   useEffect(() => {
     const raw = params.toString();
@@ -44,16 +53,23 @@ export function AppNotices() {
     const done = params.get("done");
     const welcomeFlag = params.get("welcome");
     const mail = params.get("mail");
-    const mailError = params.get("mailError");
-    const hasFlash = Boolean(error || notice || done || welcomeFlag || mail || mailError);
+    const hasFlash = Boolean(error || notice || done || welcomeFlag || mail);
     if (!hasFlash || consumed.current === raw) return;
     consumed.current = raw;
     const next: Toast[] = [];
     if (notice) next.push({ id: Date.now(), kind: "ok", text: notice });
     if (error) next.push({ id: Date.now() + 1, kind: "error", text: error });
     if (done === "1") next.push({ id: Date.now() + 2, kind: "ok", text: "Saved" });
-    if (next.length) setToasts((current) => [...next, ...current].slice(0, 4));
-    if (welcomeFlag || mail || mailError) publishWelcome({ mail });
+    if (next.length) {
+      setToasts((current) => [...next, ...current].slice(0, 4));
+      for (const toast of next) {
+        const handle = window.setTimeout(() => {
+          setToasts((current) => current.filter((item) => item.id !== toast.id));
+        }, TOAST_MS);
+        timers.current.push(handle);
+      }
+    }
+    if (welcomeFlag || mail) publishWelcome({ mail });
     const kept = new URLSearchParams(params.toString());
     for (const key of DROP) kept.delete(key);
     const query = kept.toString();
