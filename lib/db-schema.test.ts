@@ -193,6 +193,18 @@ test("startup migration adds missing host and email2 columns and keeps old invit
     assert.equal(recovered.status, "sent");
   }
 
+  const sharedIp = "198.51.100.30";
+  for (let i = 0; i < 20; i++) {
+    const created = await access.issueLoginToken(`nat-create-${i}@example.com`, "create", sharedIp);
+    assert.equal(created.status, "issued");
+  }
+  for (let i = 0; i < 10; i++) {
+    const logged = await access.issueLoginToken(`nat-login-${i}@example.com`, "login", sharedIp);
+    assert.equal(logged.status, "issued");
+  }
+  assert.equal((await access.issueLoginToken("nat-over@example.com", "login", sharedIp)).status, "limited");
+  assert.equal((await access.issueLoginToken("nat-over-create@example.com", "create", sharedIp)).status, "limited");
+
   const fresh = await access.issueLoginToken("fresh@example.com", "create", "198.51.100.20");
   assert.equal(fresh.status, "issued");
   if (fresh.status !== "issued") return;

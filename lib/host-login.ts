@@ -14,7 +14,7 @@ export const DEVICE_MAX_AGE_SECONDS = 365 * 24 * 60 * 60;
 export const LOGIN_WINDOW_MS = 60 * 60 * 1000;
 export const LOGIN_EMAIL_LIMIT = 3;
 export const CREATE_EMAIL_LIMIT = 10;
-export const LOGIN_IP_LIMIT = 10;
+export const LOGIN_IP_LIMIT = 30;
 export const EMAIL_CHANGE_LIMIT = 3;
 
 export const RECOVER_SENT_MESSAGE =

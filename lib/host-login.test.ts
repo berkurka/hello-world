@@ -14,14 +14,14 @@ import {
   withinLoginLimits,
 } from "./host-login";
 
-test("login limits are 3 per email and 10 per IP", () => {
+test("login limits are 3 per email and 30 per IP", () => {
   assert.equal(LOGIN_EMAIL_LIMIT, 3);
   assert.equal(CREATE_EMAIL_LIMIT, 10);
-  assert.equal(LOGIN_IP_LIMIT, 10);
+  assert.equal(LOGIN_IP_LIMIT, 30);
   assert.equal(withinLoginLimits(0, 0), true);
-  assert.equal(withinLoginLimits(2, 9), true);
+  assert.equal(withinLoginLimits(2, 29), true);
   assert.equal(withinLoginLimits(3, 0), false);
-  assert.equal(withinLoginLimits(0, 10), false);
+  assert.equal(withinLoginLimits(0, 30), false);
 });
 
 test("sign-in sessions last 30 days and cookies stay httpOnly", () => {
