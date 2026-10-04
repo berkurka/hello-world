@@ -36,10 +36,27 @@ test("startup migration adds missing host and email2 columns and keeps old invit
           VALUES (?, ?, ?, ?, ?, ?)`,
     args: ["e1", "admin-token", "Dinner", "2026-10-03T18:00", "Alex", "2020-01-01T00:00:00.000Z"],
   });
+  await setup.execute(`CREATE TABLE rsvps (
+    id TEXT PRIMARY KEY,
+    invitee_id TEXT NOT NULL UNIQUE,
+    attending INTEGER NOT NULL,
+    comment TEXT,
+    adults INTEGER NOT NULL DEFAULT 0,
+    kids INTEGER NOT NULL DEFAULT 0,
+    infants INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL
+  )`);
   await setup.execute({
     sql: `INSERT INTO invitees (id, event_id, email, display_name, token, created_at)
           VALUES (?, ?, ?, ?, ?, ?)`,
     args: ["i1", "e1", "Old@Example.com", "Old Guest", "tok-old", "2020-01-01T00:00:00.000Z"],
+  });
+  await setup.execute(
+    `CREATE UNIQUE INDEX invitees_event_email ON invitees(event_id, email)`,
+  );
+  await setup.execute({
+    sql: `INSERT INTO rsvps (id, invitee_id, attending, updated_at) VALUES (?, ?, ?, ?)`,
+    args: ["r1", "i1", 1, "2020-01-02T00:00:00.000Z"],
   });
   setup.close();
 
@@ -60,6 +77,12 @@ test("startup migration adds missing host and email2 columns and keeps old invit
   assert.ok(eventNames.includes("timezone"));
   assert.ok(eventNames.includes("ends_at"));
   assert.ok(eventNames.includes("updated_at"));
+  assert.ok(eventNames.includes("share_token"));
+  assert.ok(eventNames.includes("share_enabled"));
+  assert.ok(eventNames.includes("share_cap"));
+  assert.ok(inviteeNames.includes("joined_via"));
+  assert.ok(inviteeNames.includes("last_reminded_at"));
+  assert.ok(inviteeNames.includes("email_opt_out"));
   const tables = await db.query<{ name: string }>(
     "SELECT name FROM sqlite_master WHERE type = 'table'",
   );
@@ -68,6 +91,10 @@ test("startup migration adds missing host and email2 columns and keeps old invit
   assert.ok(tableNames.includes("host_sessions"));
   assert.ok(tableNames.includes("host_email_changes"));
   assert.ok(tableNames.includes("host_device_grants"));
+  assert.ok(tableNames.includes("email_sends"));
+  assert.ok(tableNames.includes("share_join_attempts"));
+  const rsvpCols = await db.query<{ name: string }>("PRAGMA table_info(rsvps)");
+  assert.ok(rsvpCols.map((col) => col.name).includes("entered_by_host"));
 
   const migrated = await db.queryOne<{
     allow_maybe: number;
@@ -367,6 +394,32 @@ test("startup migration adds missing host and email2 columns and keeps old invit
   assert.equal((await db.getEvent("e2"))?.host_email, "new-host@example.com");
   assert.ok((await db.getEvent("e2"))?.host_email_verified_at);
   assert.equal(await access.redeemEmailChange(change.token), null);
+
+  const kept = await db.query<{ joined_via: string; attending: number; entered_by_host: number }>(
+    `SELECT i.joined_via, r.attending, r.entered_by_host
+     FROM invitees i JOIN rsvps r ON r.invitee_id = i.id WHERE i.id = ?`,
+    ["i1"],
+  );
+  assert.equal(kept[0]?.joined_via, "host");
+  assert.equal(kept[0]?.attending, 1);
+  assert.equal(Number(kept[0]?.entered_by_host), 0);
+
+  await db.insertInvitee("e1", null, "Link guest", null, "link");
+  await db.insertInvitee("e1", "", "Another link guest", null, "link");
+  const blanks = await db.query<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM invitees WHERE event_id = ? AND email = ''`,
+    ["e1"],
+  );
+  assert.equal(Number(blanks[0]?.n), 2);
+
+  const oldIndex = await db.query<{ name: string }>(
+    `SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'invitees_event_email'`,
+  );
+  assert.equal(oldIndex.length, 0);
+  const index = await db.query<{ sql: string }>(
+    `SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'invitees_event_email_v2'`,
+  );
+  assert.match(String(index[0]?.sql ?? ""), /where/i);
 
   rmSync(dir, { recursive: true, force: true });
 });

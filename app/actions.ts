@@ -2,6 +2,7 @@
 
 import { after } from "next/server";
 import { revalidatePath } from "next/cache";
+import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { hostEmailChangeUrl, hostLoginUrl, rsvpUrl } from "@/lib/app-url";
 import { isValidTimeZone, resolveEndsAt } from "@/lib/calendar";
@@ -9,6 +10,7 @@ import {
   deleteEventImage,
   emailsUsedOnEvent,
   getEvent,
+  getEventByShareToken,
   getInviteeByToken,
   getRsvp,
   insertInvitee,
@@ -16,7 +18,7 @@ import {
   run,
   saveEventImage,
 } from "@/lib/db";
-import { asBool, asCount, isEmail, normalizeStoredEmail, parseAttending, storesHeadcount } from "@/lib/format";
+import { asBool, asCount, formatInviteWhen, isEmail, normalizeStoredEmail, parseAttending, storesHeadcount } from "@/lib/format";
 import {
   attachHostEmail,
   authorizeOrganizer,
@@ -34,7 +36,7 @@ import {
   startSession,
   type HostAccess,
 } from "@/lib/host-login";
-import { appendSendError, familyInviteNotice, friendlyMailError, unsentBatchNotice } from "@/lib/invite-delivery";
+import { appendSendError, familyInviteNotice, friendlyMailError, inviteRecipients, unsentBatchNotice } from "@/lib/invite-delivery";
 import { newId, newToken } from "@/lib/ids";
 import {
   applyExistingEmails,
@@ -44,6 +46,7 @@ import {
 } from "@/lib/invitee-csv";
 import {
   GENERIC_MAIL_ERROR,
+  friendlyProviderError,
   mailConfigured,
   providerErrorMessage,
   sendHostEmailChangeEmail,
@@ -54,6 +57,28 @@ import {
 import { goingNeedsPeople } from "@/lib/party-stats";
 import { inspectPartyImage } from "@/lib/party-image";
 import { themeById } from "@/lib/themes";
+import { assertDailyBudget } from "@/lib/email-log";
+import { EmailQuotaError } from "@/lib/email-budget";
+import {
+  GUEST_MESSAGE_MAX,
+  describePartyChanges,
+  parseAudience,
+  requestIp,
+  shareReturnCookie,
+} from "@/lib/guest-list";
+import {
+  clearGuestRsvp,
+  importInviteesFromText,
+  joinFromShare,
+  recordHostRsvp,
+  removeGuest,
+  rotateGuestLink,
+  rotateShareLink,
+  saveShareSettings,
+  updateGuestContact,
+} from "@/lib/guests";
+import { bulkMailBlocked } from "@/lib/guest-list";
+import { changeNote, emailGuestGroup, messageNote, reminderNote } from "@/lib/guest-send";
 import {
   clearDeviceCookie,
   clearSessionCookie,
@@ -167,8 +192,8 @@ export async function createEvent(formData: FormData) {
     `INSERT INTO events (
       id, admin_token, title, starts_at, ends_at, location, notes, host_name, host_email,
       host_claim_token, host_claimed_at, ask_comment, ask_adults, ask_kids, ask_infants,
-      allow_maybe, party_image_mime, theme, timezone, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+      allow_maybe, party_image_mime, theme, timezone, share_token, share_enabled, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, ?, ?, NULL, 0, ?, ?)`,
     [
       id,
       adminToken,
@@ -268,8 +293,39 @@ export async function updateEvent(formData: FormData) {
   } else if (image.kind === "remove") {
     await deleteEventImage(event.id);
   }
+  const changes = describePartyChanges(
+    { starts_at: event.starts_at, ends_at: event.ends_at, location: event.location },
+    { starts_at: fields.startsAt, ends_at: fields.endsAt || null, location: fields.location },
+    (startsAt, endsAt) => formatInviteWhen(startsAt, endsAt),
+  );
+  let notice = "Event updated.";
+  if (asBool(formData.get("notifyGuests")) && changes.length > 0) {
+    const invitees = await listInvitees(event.id);
+    const updated = {
+      ...event,
+      title: fields.title,
+      starts_at: fields.startsAt,
+      ends_at: fields.endsAt || null,
+      location: fields.location,
+      notes: fields.notes,
+      host_name: fields.hostName,
+      theme: fields.theme,
+    };
+    const result = await emailGuestGroup({
+      event: updated,
+      invitees,
+      audience: "everyone",
+      kind: "change",
+      verb: "Emailed",
+      build: (invitee) => changeNote(updated, invitee, changes),
+    });
+    notice =
+      result.sentGuests > 0 || result.notice !== "No guests to email."
+        ? `Event updated. ${result.notice}`
+        : "Event updated. No guest emails to notify.";
+  }
   revalidatePath(`/e/${event.id}/manage`);
-  redirect(managePath(event, { notice: "Event updated." }, access));
+  redirect(managePath(event, { notice }, access));
 }
 
 function managePath(
@@ -322,18 +378,7 @@ export async function importInvitees(formData: FormData) {
     redirect(managePath(event, { error: "That file is too large. Use a CSV under 256 KB." }, access));
   }
   const text = await file.text();
-  const plan = applyExistingEmails(parseInviteeCsv(text), await emailsUsedOnEvent(event.id));
-  let added = 0;
-  for (const row of plan.toAdd) {
-    try {
-      await insertInvitee(event.id, row.email, row.displayName, row.email2);
-      added += 1;
-    } catch {
-      plan.skips.push({ line: row.line, reason: "already on this event" });
-    }
-  }
-  plan.skips.sort((a, b) => a.line - b.line);
-  const summary = summarizeInviteeImport(added, plan.skips);
+  const { added, summary } = await importInviteesFromText(event.id, text);
   revalidatePath(`/e/${event.id}/manage`);
   if (added === 0) {
     redirect(managePath(event, { error: summary }, access));
@@ -347,6 +392,9 @@ async function deliverInvite(eventId: string, inviteeId: string) {
   const invitees = await listInvitees(eventId);
   const invitee = invitees.find((row) => row.id === inviteeId);
   if (!invitee) throw new Error("Invitee not found");
+  if (Number(invitee.email_opt_out) === 1) {
+    throw new Error("This guest opted out of email.");
+  }
   if (!mailConfigured()) {
     console.error("Email is not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASS, and MAIL_FROM.");
     throw new Error("Email sending isn't available right now.");
@@ -372,7 +420,8 @@ export async function sendInvite(formData: FormData) {
   try {
     delivery = await deliverInvite(event.id, inviteeId);
   } catch (err) {
-    redirect(managePath(event, { error: friendlyMailError(err) }, access));
+    const message = err instanceof EmailQuotaError ? err.message : friendlyMailError(err);
+    redirect(managePath(event, { error: message }, access));
   }
   revalidatePath(`/e/${event.id}/manage`);
   if (delivery.sent.length === 0) {
@@ -394,9 +443,17 @@ export async function sendInvite(formData: FormData) {
 export async function sendAllUnsent(formData: FormData) {
   const { event, access } = await requireOrganizer(formData);
   const invitees = await listInvitees(event.id);
-  const pending = invitees.filter((row) => !row.invited_at);
+  const pending = invitees.filter(
+    (row) => !row.invited_at && row.joined_via !== "link" && !bulkMailBlocked(row),
+  );
   if (pending.length === 0) {
     redirect(managePath(event, { notice: "No unsent invites." }, access));
+  }
+  const addresses = pending.reduce((sum, row) => sum + inviteRecipients(row).length, 0);
+  try {
+    await assertDailyBudget(addresses);
+  } catch (err) {
+    redirect(managePath(event, { error: friendlyProviderError(err) }, access));
   }
   let sentFamilies = 0;
   const failed: string[] = [];
@@ -409,7 +466,7 @@ export async function sendAllUnsent(formData: FormData) {
       failed.push(...delivery.failed);
       if (delivery.error) errors.push(delivery.error);
     } catch (err) {
-      stopped = friendlyMailError(err);
+      stopped = err instanceof EmailQuotaError ? err.message : friendlyMailError(err);
       break;
     }
   }
@@ -451,7 +508,7 @@ export async function saveRsvp(formData: FormData) {
   const now = new Date().toISOString();
   if (existing) {
     await run(
-      `UPDATE rsvps SET attending = ?, comment = ?, adults = ?, kids = ?, infants = ?, updated_at = ? WHERE id = ?`,
+      `UPDATE rsvps SET attending = ?, comment = ?, adults = ?, kids = ?, infants = ?, updated_at = ?, entered_by_host = 0 WHERE id = ?`,
       [attending, comment || null, adults, kids, infants, now, existing.id],
     );
   } else {
@@ -604,4 +661,196 @@ export async function resetDashboardLink(formData: FormData) {
       "token",
     ),
   );
+}
+
+function guestId(formData: FormData) {
+  return required(formData, "inviteeId");
+}
+
+export async function updateInvitee(formData: FormData) {
+  const { event, access } = await requireOrganizer(formData);
+  const result = await updateGuestContact(event.id, guestId(formData), {
+    displayName: required(formData, "displayName"),
+    email: required(formData, "email"),
+    email2: required(formData, "email2"),
+  });
+  revalidatePath(`/e/${event.id}/manage`);
+  if ("error" in result) redirect(managePath(event, { error: result.error }, access));
+  redirect(managePath(event, { notice: "Guest updated." }, access));
+}
+
+export async function removeInvitee(formData: FormData) {
+  const { event, access } = await requireOrganizer(formData);
+  if (!asBool(formData.get("confirmRemove"))) {
+    redirect(managePath(event, { error: "Confirm removal before deleting a guest." }, access));
+  }
+  const result = await removeGuest(event.id, guestId(formData));
+  revalidatePath(`/e/${event.id}/manage`);
+  if ("error" in result) redirect(managePath(event, { error: result.error }, access));
+  redirect(managePath(event, { notice: "Guest removed." }, access));
+}
+
+export async function setHostRsvp(formData: FormData) {
+  const { event, access } = await requireOrganizer(formData);
+  const result = await recordHostRsvp(event, guestId(formData), {
+    attendingRaw: required(formData, "attending"),
+    comment: String(formData.get("comment") ?? ""),
+    adults: String(formData.get("adults") ?? ""),
+    kids: String(formData.get("kids") ?? ""),
+    infants: String(formData.get("infants") ?? ""),
+  });
+  revalidatePath(`/e/${event.id}/manage`);
+  if ("error" in result) redirect(managePath(event, { error: result.error }, access));
+  redirect(managePath(event, { notice: "Reply recorded." }, access));
+}
+
+export async function clearHostRsvp(formData: FormData) {
+  const { event, access } = await requireOrganizer(formData);
+  const result = await clearGuestRsvp(event.id, guestId(formData));
+  revalidatePath(`/e/${event.id}/manage`);
+  if ("error" in result) redirect(managePath(event, { error: result.error }, access));
+  redirect(managePath(event, { notice: "Reply cleared." }, access));
+}
+
+export async function replaceInviteeLink(formData: FormData) {
+  const { event, access } = await requireOrganizer(formData);
+  if (!asBool(formData.get("confirmReplace"))) {
+    redirect(managePath(event, { error: "Confirm before replacing a guest link." }, access));
+  }
+  const result = await rotateGuestLink(event.id, guestId(formData));
+  revalidatePath(`/e/${event.id}/manage`);
+  if ("error" in result) redirect(managePath(event, { error: result.error }, access));
+  redirect(managePath(event, { notice: "New guest link saved. The old link no longer works." }, access));
+}
+
+export async function pasteInvitees(formData: FormData) {
+  const { event, access } = await requireOrganizer(formData);
+  const text = String(formData.get("list") ?? "");
+  if (!text.trim()) {
+    redirect(managePath(event, { error: "Paste at least one guest." }, access));
+  }
+  if (Buffer.byteLength(text, "utf8") > INVITEE_CSV_MAX_BYTES) {
+    redirect(managePath(event, { error: "That list is too large. Use a list under 256 KB." }, access));
+  }
+  const { added, summary } = await importInviteesFromText(event.id, text);
+  revalidatePath(`/e/${event.id}/manage`);
+  if (added === 0) redirect(managePath(event, { error: summary }, access));
+  redirect(managePath(event, { notice: summary }, access));
+}
+
+export async function updateShareSettings(formData: FormData) {
+  const { event, access } = await requireOrganizer(formData);
+  const enabled = asBool(formData.get("shareEnabled"));
+  const previous = event.share_token;
+  const result = await saveShareSettings(event.id, {
+    enabled,
+    capRaw: String(formData.get("shareCap") ?? ""),
+    currentToken: previous,
+    wasEnabled: event.share_enabled === 1,
+  });
+  revalidatePath(`/e/${event.id}/manage`);
+  if ("error" in result) redirect(managePath(event, { error: result.error }, access));
+  if (previous && previous !== result.token) revalidatePath(`/p/${previous}`);
+  if (result.token) revalidatePath(`/p/${result.token}`);
+  const notice = !enabled
+    ? "Party link turned off. Personal invite links still work."
+    : result.rotated && previous
+      ? "Party link is on. The previous link no longer works."
+      : "Party link saved. Anyone with it can RSVP.";
+  redirect(managePath(event, { notice }, access));
+}
+
+export async function replaceShareLink(formData: FormData) {
+  const { event, access } = await requireOrganizer(formData);
+  if (!asBool(formData.get("confirmReplace"))) {
+    redirect(managePath(event, { error: "Confirm before replacing the party link." }, access));
+  }
+  const previous = event.share_token;
+  const token = await rotateShareLink(event.id);
+  revalidatePath(`/e/${event.id}/manage`);
+  if (previous) revalidatePath(`/p/${previous}`);
+  revalidatePath(`/p/${token}`);
+  redirect(managePath(event, { notice: "Party link replaced. The old link no longer works." }, access));
+}
+
+export async function remindWaiting(formData: FormData) {
+  const { event, access } = await requireOrganizer(formData);
+  const invitees = await listInvitees(event.id);
+  const result = await emailGuestGroup({
+    event,
+    invitees,
+    audience: "waiting",
+    kind: "reminder",
+    verb: "Reminded",
+    build: (invitee) => reminderNote(event, invitee),
+  });
+  revalidatePath(`/e/${event.id}/manage`);
+  const flash = result.sentGuests > 0 ? { notice: result.notice } : { error: result.notice };
+  redirect(managePath(event, flash, access));
+}
+
+export async function messageGuests(formData: FormData) {
+  const { event, access } = await requireOrganizer(formData);
+  const audience = parseAudience(required(formData, "audience"));
+  const message = String(formData.get("message") ?? "").trim();
+  if (!audience) redirect(managePath(event, { error: "Choose who should get the message." }, access));
+  if (!message) redirect(managePath(event, { error: "Write a message before sending." }, access));
+  if (message.length > GUEST_MESSAGE_MAX) {
+    redirect(managePath(event, { error: `Keep the message under ${GUEST_MESSAGE_MAX} characters.` }, access));
+  }
+  const invitees = await listInvitees(event.id);
+  const result = await emailGuestGroup({
+    event,
+    invitees,
+    audience,
+    kind: "message",
+    verb: "Messaged",
+    build: (invitee) => messageNote(event, invitee, message),
+  });
+  revalidatePath(`/e/${event.id}/manage`);
+  const flash = result.sentGuests > 0 ? { notice: result.notice } : { error: result.notice };
+  redirect(managePath(event, flash, access));
+}
+
+function shareErrorPath(token: string, error: string) {
+  return `/p/${token}?error=` + encodeURIComponent(error);
+}
+
+export async function joinShareLink(formData: FormData) {
+  const shareToken = required(formData, "shareToken");
+  const event = await getEventByShareToken(shareToken);
+  if (!event) notFound();
+  const headerList = await headers();
+  const result = await joinFromShare({
+    event,
+    displayName: required(formData, "displayName"),
+    email: required(formData, "email"),
+    attendingRaw: required(formData, "attending"),
+    comment: String(formData.get("comment") ?? ""),
+    adults: String(formData.get("adults") ?? ""),
+    kids: String(formData.get("kids") ?? ""),
+    infants: String(formData.get("infants") ?? ""),
+    ip: requestIp(headerList.get("x-forwarded-for") ?? headerList.get("x-real-ip")),
+  });
+  if ("error" in result) redirect(shareErrorPath(shareToken, result.error));
+  const jar = await cookies();
+  jar.set(shareReturnCookie(event.id), result.token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 180,
+  });
+  revalidatePath(`/e/${event.id}/manage`);
+  revalidatePath(`/p/${shareToken}`);
+  redirect(`/rsvp/${result.token}`);
+}
+
+export async function optOutOfGuestEmail(formData: FormData) {
+  const token = required(formData, "token");
+  const invitee = await getInviteeByToken(token);
+  if (!invitee) notFound();
+  await run(`UPDATE invitees SET email_opt_out = 1 WHERE id = ?`, [invitee.id]);
+  revalidatePath(`/opt-out/${token}`);
+  redirect(`/opt-out/${token}?opted=1`);
 }

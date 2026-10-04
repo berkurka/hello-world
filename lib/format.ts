@@ -138,3 +138,11 @@ export function countSummary(
   if (event.ask_infants && infants > 0) parts.push(`${infants} ${infants === 1 ? "baby" : "babies"}`);
   return parts.join(" · ");
 }
+
+export function formatReminded(iso: string | null) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const label = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(d);
+  return `Reminded ${label}`;
+}

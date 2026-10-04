@@ -1,6 +1,6 @@
 import { mkdirSync } from "fs";
 import { join } from "path";
-import { createClient, type Client } from "@libsql/client";
+import { createClient, type Client, type InStatement } from "@libsql/client";
 import { isEphemeralDb } from "./db-env";
 import { normalizeStoredEmail } from "./format";
 import { claimTokenIsOpen } from "./host-claim";
@@ -113,8 +113,21 @@ async function ensureSchema() {
       updated_at TEXT NOT NULL,
       FOREIGN KEY (event_id) REFERENCES events(id)
     )`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS invitees_event_email ON invitees(event_id, email)`,
     `CREATE INDEX IF NOT EXISTS invitees_event ON invitees(event_id)`,
+    `CREATE TABLE IF NOT EXISTS share_join_attempts (
+      id TEXT PRIMARY KEY,
+      event_id TEXT NOT NULL,
+      ip TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS share_join_attempts_lookup ON share_join_attempts(event_id, ip, created_at)`,
+    `CREATE TABLE IF NOT EXISTS email_sends (
+      id TEXT PRIMARY KEY,
+      recipient TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS email_sends_created ON email_sends(created_at)`,
   ];
   for (const sql of statements) {
     await db.execute(sql);
@@ -132,6 +145,13 @@ async function ensureSchema() {
   await addColumnIfMissing("events", "timezone", "TEXT");
   await addColumnIfMissing("events", "ends_at", "TEXT");
   await addColumnIfMissing("events", "updated_at", "TEXT");
+  await addColumnIfMissing("invitees", "joined_via", "TEXT NOT NULL DEFAULT 'host'");
+  await addColumnIfMissing("invitees", "last_reminded_at", "TEXT");
+  await addColumnIfMissing("invitees", "email_opt_out", "INTEGER NOT NULL DEFAULT 0");
+  await addColumnIfMissing("rsvps", "entered_by_host", "INTEGER NOT NULL DEFAULT 0");
+  await addColumnIfMissing("events", "share_token", "TEXT");
+  await addColumnIfMissing("events", "share_enabled", "INTEGER NOT NULL DEFAULT 0");
+  await addColumnIfMissing("events", "share_cap", "INTEGER");
   await db.execute(
     `CREATE UNIQUE INDEX IF NOT EXISTS events_host_claim_token ON events(host_claim_token) WHERE host_claim_token IS NOT NULL`,
   );
@@ -194,6 +214,10 @@ async function ensureSchema() {
     created_at TEXT
   )`);
   await addColumnIfMissing("schema_flags", "created_at", "TEXT");
+  await db.execute(
+    `CREATE UNIQUE INDEX IF NOT EXISTS events_share_token ON events(share_token) WHERE share_token IS NOT NULL`,
+  );
+  await ensurePartialInviteeEmailIndex(db);
   await backfillAllowMaybeOff(db);
 }
 
@@ -218,6 +242,23 @@ export async function applyAllowMaybeBackfill() {
   const db = await readyDb();
   return backfillAllowMaybeOff(db);
 }
+
+/**
+ * Real addresses stay unique. Blank emails (party-link guests) may repeat.
+ * The new index is created before the old one is dropped, so uniqueness never lapses.
+ */
+async function ensurePartialInviteeEmailIndex(db: Client) {
+  const rs = await db.execute(
+    `SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'invitees_event_email'`,
+  );
+  const sql = rs.rows[0] ? String(rs.rows[0].sql ?? "") : "";
+  if (/where/i.test(sql)) return;
+  await db.execute(
+    `CREATE UNIQUE INDEX IF NOT EXISTS invitees_event_email_v2 ON invitees(event_id, email) WHERE email <> ''`,
+  );
+  await db.execute(`DROP INDEX IF EXISTS invitees_event_email`);
+}
+
 
 export async function readyDb() {
   if (!schemaReady) {
@@ -250,6 +291,11 @@ export async function queryOne<T>(sql: string, args: (string | number | null)[] 
 export async function run(sql: string, args: (string | number | null)[] = []) {
   const db = await readyDb();
   return db.execute({ sql, args });
+}
+
+export async function batchWrite(statements: InStatement[]) {
+  const db = await readyDb();
+  return db.batch(statements, "write");
 }
 
 export function getEvent(id: string) {
@@ -314,9 +360,24 @@ export function getRsvp(inviteeId: string) {
   return queryOne<RsvpRow>(`SELECT * FROM rsvps WHERE invitee_id = ?`, [inviteeId]);
 }
 
+export function getInviteeForEvent(eventId: string, inviteeId: string) {
+  return queryOne<InviteeRow>(`SELECT * FROM invitees WHERE event_id = ? AND id = ?`, [
+    eventId,
+    inviteeId,
+  ]);
+}
+
+export function getEventByShareToken(token: string) {
+  return queryOne<EventRow>(
+    `SELECT * FROM events WHERE share_token = ? AND share_enabled = 1`,
+    [token],
+  );
+}
+
 export function listInvitees(eventId: string) {
   return query<InviteeWithRsvp>(
-    `SELECT i.*, r.attending, r.comment, r.adults, r.kids, r.infants, r.updated_at AS rsvp_updated_at
+    `SELECT i.*, r.attending, r.comment, r.adults, r.kids, r.infants, r.updated_at AS rsvp_updated_at,
+            r.entered_by_host
      FROM invitees i
      LEFT JOIN rsvps r ON r.invitee_id = i.id
      WHERE i.event_id = ?
@@ -325,13 +386,19 @@ export function listInvitees(eventId: string) {
   );
 }
 
-export async function emailsUsedOnEvent(eventId: string) {
-  const rows = await query<{ email: string; email2: string | null }>(
-    `SELECT email, email2 FROM invitees WHERE event_id = ?`,
+export async function countRows(sql: string, args: (string | number | null)[] = []) {
+  const rows = await query<{ n: number | string | null }>(sql, args);
+  return Number(rows[0]?.n ?? 0);
+}
+
+export async function emailsUsedOnEvent(eventId: string, exceptInviteeId?: string) {
+  const rows = await query<{ id: string; email: string; email2: string | null }>(
+    `SELECT id, email, email2 FROM invitees WHERE event_id = ?`,
     [eventId],
   );
   const used = new Set<string>();
   for (const row of rows) {
+    if (exceptInviteeId && row.id === exceptInviteeId) continue;
     const email = normalizeStoredEmail(row.email);
     const email2 = normalizeStoredEmail(row.email2);
     if (email) used.add(email);
@@ -375,25 +442,32 @@ export async function deleteEventImage(eventId: string) {
   ]);
 }
 
-export function insertInvitee(
+export async function insertInvitee(
   eventId: string,
-  email: string,
+  email: string | null,
   displayName: string,
   email2: string | null = null,
+  joinedVia: "host" | "link" = "host",
 ) {
-  const storedEmail = normalizeStoredEmail(email);
-  if (!storedEmail) throw new Error("Email is required.");
-  return run(
-    `INSERT INTO invitees (id, event_id, email, email2, display_name, token, invited_at, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, NULL, ?)`,
+  const storedEmail = normalizeStoredEmail(email) ?? "";
+  const name = displayName.trim();
+  if (!name) throw new Error("Name is required.");
+  if (joinedVia !== "link" && !storedEmail) throw new Error("Email is required.");
+  const id = newId();
+  const token = newToken();
+  await run(
+    `INSERT INTO invitees (id, event_id, email, email2, display_name, token, invited_at, created_at, joined_via)
+     VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
     [
-      newId(),
+      id,
       eventId,
       storedEmail,
       normalizeStoredEmail(email2),
-      displayName,
-      newToken(),
+      name,
+      token,
       new Date().toISOString(),
+      joinedVia,
     ],
   );
+  return { id, token };
 }
