@@ -1,10 +1,10 @@
-import { getEvent, getEventImage } from "@/lib/db";
+import { getEventImage, getPublicEvent } from "@/lib/db";
 
 export const runtime = "nodejs";
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const event = await getEvent(id);
+  const event = await getPublicEvent(id);
   if (!event?.party_image_mime) return new Response("Not found", { status: 404 });
   const image = await getEventImage(id);
   if (!image) return new Response("Not found", { status: 404 });
