@@ -3,13 +3,13 @@
 import { useState } from "react";
 import { RsvpForm } from "@/app/components/rsvp-form";
 import { countSummary, familyRsvpHeading, weekdayName } from "@/lib/format";
-import { isFamilyInvite } from "@/lib/invite-delivery";
-import type { EventRow, InviteeRow, RsvpRow } from "@/lib/types";
+import type { PublicEvent, PublicInvitee } from "@/lib/public-event";
+import type { RsvpRow } from "@/lib/types";
 
 type Props = {
   token: string;
-  event: EventRow;
-  invitee: InviteeRow;
+  event: PublicEvent;
+  invitee: PublicInvitee;
   rsvp: RsvpRow | null;
   openForm?: boolean;
   passed?: boolean;
@@ -61,14 +61,14 @@ function Answer({
   invitee,
   rsvp,
 }: {
-  event: EventRow;
+  event: PublicEvent;
   hostName: string;
-  invitee: InviteeRow;
+  invitee: PublicInvitee;
   rsvp: RsvpRow;
 }) {
   const weekday = weekdayName(event.starts_at);
   const counts = rsvp.attending === 1 || rsvp.attending === 2 ? countSummary(event, rsvp) : "";
-  if (isFamilyInvite(invitee)) {
+  if (invitee.family) {
     return (
       <div>
         <h2>{familyRsvpHeading(rsvp.attending)}</h2>

@@ -2,7 +2,7 @@ import { GuestInvite } from "@/app/components/guest-invite";
 import { OpenInMaps } from "@/app/components/open-in-maps";
 import { PartyActions } from "@/app/components/party-actions";
 import { icsPath } from "@/lib/app-url";
-import { getEvent, getInviteeByToken, getRsvp } from "@/lib/db";
+import { getGuestInvitee, getPublicEvent, getRsvp } from "@/lib/db";
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -16,11 +16,12 @@ export default async function RsvpPage({
 }) {
   const { token } = await params;
   const { error } = await searchParams;
-  const invitee = await getInviteeByToken(token);
+  const invitee = await getGuestInvitee(token);
   if (!invitee) notFound();
-  const event = await getEvent(invitee.event_id);
+  const event = await getPublicEvent(invitee.event_id);
   if (!event) notFound();
   const rsvp = await getRsvp(invitee.id);
+  const place = event.location ?? "";
 
   return (
     <GuestInvite
@@ -29,20 +30,20 @@ export default async function RsvpPage({
       invitee={invitee}
       rsvp={rsvp}
       error={error}
-      allowMaybe={event.allow_maybe !== 0}
+      allowMaybe={(event.allow_maybe ?? 0) !== 0}
       calendar={
         <PartyActions
           title={event.title}
           startsAt={event.starts_at}
-          endsAt={event.ends_at}
-          timezone={event.timezone}
-          location={event.location}
+          endsAt={event.ends_at ?? null}
+          timezone={event.timezone ?? null}
+          location={place}
           details=""
           icsPath={icsPath(invitee.token)}
           showMaps={false}
         />
       }
-      maps={event.location.trim() ? <OpenInMaps location={event.location} /> : null}
+      maps={place.trim() ? <OpenInMaps location={place} /> : null}
     />
   );
 }

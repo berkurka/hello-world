@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { inviteCardUrl } from "@/lib/app-url";
-import { getEvent, getInviteeByToken } from "@/lib/db";
+import { getGuestInvitee, getPublicEvent } from "@/lib/db";
 import { eventVersion, partyShareDescription, partyShareTitle } from "@/lib/party-share";
 
 export const dynamic = "force-dynamic";
@@ -12,13 +12,17 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { token } = await params;
   const robots = { index: false, follow: false };
-  const invitee = await getInviteeByToken(token);
+  const invitee = await getGuestInvitee(token);
   if (!invitee) return { robots };
-  const event = await getEvent(invitee.event_id);
+  const event = await getPublicEvent(invitee.event_id);
   if (!event) return { robots };
   const title = partyShareTitle(event);
-  const description = partyShareDescription(event);
-  const image = inviteCardUrl(token, eventVersion(event), "og");
+  const description = partyShareDescription({ starts_at: event.starts_at, location: event.location ?? "" });
+  const image = inviteCardUrl(
+    token,
+    eventVersion({ updated_at: event.updated_at, created_at: event.created_at ?? "" }),
+    "og",
+  );
   return {
     title,
     description,

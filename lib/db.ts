@@ -5,6 +5,11 @@ import { isEphemeralDb } from "./db-env";
 import { normalizeStoredEmail } from "./format";
 import { claimTokenIsOpen } from "./host-claim";
 import { newId, newToken } from "./ids";
+import {
+  PUBLIC_EVENT_COLUMNS,
+  PUBLIC_EVENT_OPTIONAL_COLUMNS,
+  type PublicEventInput,
+} from "./public-event";
 import type { EventRow, EventImageRow, InviteeRow, InviteeWithRsvp, RsvpRow } from "./types";
 
 export { isEphemeralDb };
@@ -240,6 +245,33 @@ export async function run(sql: string, args: (string | number | null)[] = []) {
 
 export function getEvent(id: string) {
   return queryOne<EventRow>(`SELECT * FROM events WHERE id = ?`, [id]);
+}
+
+/** Guest-facing event read. Secret columns are not selected. */
+export async function getPublicEvent(id: string) {
+  await readyDb();
+  const present = await tableColumns("events");
+  const optional = PUBLIC_EVENT_OPTIONAL_COLUMNS.filter((column) => present.has(column));
+  const columns = [PUBLIC_EVENT_COLUMNS, ...optional].join(", ");
+  return queryOne<PublicEventInput>(`SELECT ${columns} FROM events WHERE id = ?`, [id]);
+}
+
+export type GuestInviteeRow = {
+  id: string;
+  event_id: string;
+  display_name: string;
+  token: string;
+  family: number;
+};
+
+/** Guest-facing invitee read. Emails stay in the database. */
+export function getGuestInvitee(token: string) {
+  return queryOne<GuestInviteeRow>(
+    `SELECT id, event_id, display_name, token,
+            CASE WHEN trim(coalesce(email2, '')) <> '' THEN 1 ELSE 0 END AS family
+     FROM invitees WHERE token = ?`,
+    [token],
+  );
 }
 
 export function getEventForOrganizer(id: string, token: string) {
