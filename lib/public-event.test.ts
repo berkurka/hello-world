@@ -200,7 +200,7 @@ test("guest RSVP page HTML does not include host secrets", async () => {
   const poisoned = GuestInvite({
     event: poisonedEvent as PublicEvent,
     guestName: "The Lees",
-    invitee: poisonedInvitee as PublicInvitee,
+    invitee: poisonedInvitee as unknown as PublicInvitee,
     token: GUEST_TOKEN,
     rsvp: {
       id: "r1",
@@ -305,7 +305,7 @@ test("a Maybe party stays on the public guest fields", async () => {
     invitee: Object.assign(
       { display_name: "The Parks", token: MAYBE_TOKEN, email2: MAYBE_SPOUSE },
       { email: MAYBE_EMAIL },
-    ) as PublicInvitee,
+    ) as unknown as PublicInvitee,
     token: MAYBE_TOKEN,
     rsvp: {
       id: "r-maybe",
