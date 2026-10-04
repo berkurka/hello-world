@@ -1,5 +1,5 @@
 import { getEvent, getEventImageDataUrl, getInviteeByToken } from "@/lib/db";
-import { formatWhen } from "@/lib/format";
+import { formatInviteWhen } from "@/lib/format";
 import { inviteCardImage } from "@/lib/invite-card";
 
 export const runtime = "nodejs";
@@ -17,9 +17,10 @@ export async function GET(
   return inviteCardImage({
     guestName: invitee.display_name,
     title: event.title,
-    when: formatWhen(event.starts_at),
+    when: formatInviteWhen(event.starts_at, event.ends_at),
     location: event.location,
     hostName: event.host_name,
     imageSrc,
+    theme: event.theme,
   });
 }

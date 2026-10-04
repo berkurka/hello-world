@@ -1,3 +1,4 @@
+import { NotFoundView } from "@/app/components/not-found-view";
 import { claimHostDashboard } from "@/lib/db";
 import { redirect } from "next/navigation";
 
@@ -16,14 +17,9 @@ export default async function HostClaimPage({
   }
 
   return (
-    <main className="wrap">
-      <div className="card">
-        <h1>Not found</h1>
-        <p className="lede">
-          That claim link is invalid or has expired. If you still have the dashboard URL from when
-          the party was created, use that instead.
-        </p>
-      </div>
-    </main>
+    <NotFoundView
+      title="This link has expired"
+      body="Claim links work until they're opened, or for 7 days. If you saved your dashboard link, use that. You can also find your parties with the email you used to create them."
+    />
   );
 }

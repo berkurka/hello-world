@@ -1,8 +1,10 @@
 import nodemailer, { type Transporter } from "nodemailer";
 import { getEventImageDataUrl } from "./db";
+import { formatInviteWhen } from "./format";
 import { inviteCardPng } from "./invite-card";
-import { formatWhen } from "./format";
+import { inviteEmailHtml } from "./invite-email";
 import { inviteRecipients, type InviteDelivery } from "./invite-delivery";
+import { themeById } from "./themes";
 import type { EventRow, InviteeRow } from "./types";
 
 export type MailConfig = {
@@ -76,12 +78,16 @@ export function providerErrorMessage(err: unknown) {
   return collapsed.length > 500 ? `${collapsed.slice(0, 499)}…` : collapsed;
 }
 
-const NOT_CONFIGURED =
+const NOT_CONFIGURED_LOG =
   "Email is not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASS, and MAIL_FROM.";
+const NOT_CONFIGURED = "Email sending isn't available right now.";
 
 function requireMailConfig() {
   const config = mailConfigFrom();
-  if (!config) throw new Error(NOT_CONFIGURED);
+  if (!config) {
+    console.error(NOT_CONFIGURED_LOG);
+    throw new Error(NOT_CONFIGURED);
+  }
   return config;
 }
 
@@ -111,7 +117,8 @@ export async function sendInviteEmail(opts: {
   if (recipients.length === 0) {
     throw new Error("Invitee has no email address.");
   }
-  const when = formatWhen(event.starts_at);
+  const when = formatInviteWhen(event.starts_at, event.ends_at);
+  const theme = themeById(event.theme);
   const imageSrc = event.party_image_mime ? await getEventImageDataUrl(event.id) : null;
   const png = await inviteCardPng({
     guestName: invitee.display_name,
@@ -120,6 +127,7 @@ export async function sendInviteEmail(opts: {
     location: event.location,
     hostName: event.host_name,
     imageSrc,
+    theme: theme.id,
   });
   const from = mailFromHeader();
   if (!from) throw new Error(NOT_CONFIGURED);
@@ -137,17 +145,15 @@ export async function sendInviteEmail(opts: {
     ]
       .filter((line) => line !== undefined)
       .join("\n"),
-    html: `
-      <div style="font-family:Georgia,serif;color:#2c1810;max-width:640px">
-        <p>Hi ${escapeHtml(invitee.display_name)},</p>
-        <p>${escapeHtml(event.host_name)} invited you to <strong>${escapeHtml(event.title)}</strong>.</p>
-        <p>
-          <img src="cid:invitation" alt="Invitation for ${escapeHtml(invitee.display_name)}" style="width:100%;max-width:640px;border:1px solid #e6d9c8" />
-        </p>
-        <p><a href="${rsvpLink}" style="display:inline-block;background:#8b2942;color:#fff;padding:12px 18px;text-decoration:none;border-radius:4px">RSVP now</a></p>
-        <p style="color:#5c4638">Or paste this link: ${escapeHtml(rsvpLink)}</p>
-      </div>
-    `,
+    html: inviteEmailHtml({
+      guestName: invitee.display_name,
+      hostName: event.host_name,
+      title: event.title,
+      when,
+      place: event.location,
+      rsvpLink,
+      theme,
+    }),
     attachments: [
       {
         filename: "invitation.png",
@@ -195,12 +201,12 @@ export async function sendHostClaimEmail(opts: {
       "This link works until you open it, or for 7 days — whichever comes first. After that, use the dashboard URL you saved when you created the party.",
     ].join("\n"),
     html: `
-      <div style="font-family:Georgia,serif;color:#2c1810;max-width:640px">
+      <div style="font-family:Arial,Helvetica,sans-serif;color:#241910;max-width:640px">
         <p>Hi ${escapeHtml(event.host_name)},</p>
         <p>Your party <strong>${escapeHtml(event.title)}</strong> is ready.</p>
-        <p><a href="${claimLink}" style="display:inline-block;background:#8b2942;color:#fff;padding:12px 18px;text-decoration:none;border-radius:4px">Open dashboard</a></p>
-        <p style="color:#5c4638">Or paste this link: ${escapeHtml(claimLink)}</p>
-        <p style="color:#5c4638">This link works until you open it, or for 7 days. After that, use the dashboard URL you saved when you created the party.</p>
+        <p><a href="${claimLink}" style="display:inline-block;background:#c81e5b;color:#fff;padding:14px 22px;text-decoration:none;border-radius:10px;font-weight:700">Open dashboard</a></p>
+        <p style="color:#6a5648">Or paste this link: ${escapeHtml(claimLink)}</p>
+        <p style="color:#6a5648">This link works until you open it, or for 7 days. After that, use the dashboard link you saved when you created the party.</p>
       </div>
     `,
   });
