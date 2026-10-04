@@ -69,13 +69,19 @@ export function recipientCount(
     .reduce((sum, row) => sum + inviteRecipients(row).length, 0);
 }
 
-export function bulkMailBlocked(row: {
-  attending: number | null;
-  email_opt_out?: number | null;
-  joined_via?: string | null;
-}) {
+export function bulkMailBlocked(
+  row: {
+    attending: number | null;
+    email_opt_out?: number | null;
+    joined_via?: string | null;
+  },
+  audience?: GuestAudience,
+) {
   if (Number(row.email_opt_out) === 1) return true;
-  return row.joined_via === "link" && row.attending === null;
+  if (row.joined_via === "link" && row.attending === null) return true;
+  // A link guest typed their own address. Everyone and Going wait until that address is confirmed.
+  if (row.joined_via === "link" && (audience === "everyone" || audience === "going")) return true;
+  return false;
 }
 
 export function remindedRecently(iso: string | null | undefined, now = Date.now()) {
@@ -98,7 +104,7 @@ export function reachableGuests<
     (row) =>
       matchesAudience(row.attending, audience) &&
       inviteRecipients(row).length > 0 &&
-      !bulkMailBlocked(row),
+      !bulkMailBlocked(row, audience),
   );
 }
 

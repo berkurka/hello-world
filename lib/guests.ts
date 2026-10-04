@@ -14,6 +14,7 @@ import {
   summarizeInviteeImport,
 } from "./invitee-csv";
 import {
+  REMINDER_COOLDOWN_MS,
   SHARE_JOIN_EVENT_LIMIT,
   SHARE_JOIN_LIMIT,
   SHARE_JOIN_WINDOW_MS,
@@ -166,8 +167,19 @@ export async function rotateGuestLink(
   return { ok: true as const, token };
 }
 
+/** Claims the 24-hour reminder slot. A second click in that window changes no row. */
 export async function markReminded(inviteeId: string, when = new Date().toISOString()) {
-  await run(`UPDATE invitees SET last_reminded_at = ? WHERE id = ?`, [when, inviteeId]);
+  const cutoff = new Date(new Date(when).getTime() - REMINDER_COOLDOWN_MS).toISOString();
+  const result = await run(
+    `UPDATE invitees SET last_reminded_at = ?
+     WHERE id = ? AND (last_reminded_at IS NULL OR last_reminded_at <= ?)`,
+    [when, inviteeId, cutoff],
+  );
+  return Number(result.rowsAffected) > 0;
+}
+
+export async function restoreReminded(inviteeId: string, previous: string | null) {
+  await run(`UPDATE invitees SET last_reminded_at = ? WHERE id = ?`, [previous, inviteeId]);
 }
 
 export async function saveShareSettings(
@@ -266,13 +278,15 @@ export async function joinFromShare(opts: {
   if (opts.attendingRaw !== "yes" && opts.attendingRaw !== "no") {
     return { error: "Please choose yes or no." };
   }
+
+  const attempt = await claimShareAttempt(opts.event.id, opts.ip, now);
+  if ("error" in attempt) return attempt;
+
+  // Spend the attempt before answering, so this check cannot probe the guest list for free.
   if (email) {
     const taken = await emailsUsedOnEvent(opts.event.id);
     if (taken.has(email)) return { error: "That email is already on this guest list." };
   }
-
-  const attempt = await claimShareAttempt(opts.event.id, opts.ip, now);
-  if ("error" in attempt) return attempt;
 
   const attending = opts.attendingRaw === "yes" ? 1 : 0;
   const inviteeId = newId();

@@ -11,7 +11,7 @@ import {
   type PartyChange,
 } from "./guest-list";
 import { changeNoticeContent, guestMessageContent, reminderContent } from "./guest-mail";
-import { markReminded } from "./guests";
+import { markReminded, restoreReminded } from "./guests";
 import { inviteRecipients } from "./invite-delivery";
 import { mailConfigured, mailFromHeader, sendPlainGuestEmail } from "./mail";
 import type { EventRow, InviteeWithRsvp } from "./types";
@@ -52,6 +52,8 @@ export async function emailGuestGroup(opts: {
   let stopped: string | undefined;
   for (const invitee of targets) {
     const note = opts.build(invitee);
+    const claimedReminder = opts.kind === "reminder" ? await markReminded(invitee.id) : false;
+    if (opts.kind === "reminder" && !claimedReminder) continue;
     let any = false;
     for (const email of inviteRecipients(invitee)) {
       try {
@@ -72,10 +74,8 @@ export async function emailGuestGroup(opts: {
         }
       }
     }
-    if (any) {
-      sentGuests += 1;
-      if (opts.kind === "reminder") await markReminded(invitee.id);
-    }
+    if (any) sentGuests += 1;
+    else if (claimedReminder) await restoreReminded(invitee.id, invitee.last_reminded_at);
     if (stopped) break;
   }
   return {

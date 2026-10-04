@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { SHARE_JOIN_EVENT_LIMIT, SHARE_JOIN_LIMIT } from "./guest-list";
+import { REMINDER_COOLDOWN_MS, SHARE_JOIN_EVENT_LIMIT, SHARE_JOIN_LIMIT } from "./guest-list";
 
 const dir = mkdtempSync(join(tmpdir(), "partyz-guests-"));
 process.env.TURSO_DATABASE_URL = `file:${join(dir, "invite.db")}`;
@@ -57,6 +57,18 @@ test("host can edit, record a reply, replace a link, and remove a guest", async 
   assert.equal(rsvp?.entered_by_host, 1);
   assert.equal(rsvp?.comment, "Called me");
   assert.equal(rsvp?.adults, 2);
+  await guests.upsertRsvp(added.id, {
+    attending: 0,
+    comment: null,
+    adults: 0,
+    kids: 0,
+    infants: 0,
+    enteredByHost: false,
+  });
+  const guestReply = await db.getRsvp(added.id);
+  assert.equal(guestReply?.id, rsvp?.id);
+  assert.equal(guestReply?.attending, 0);
+  assert.equal(guestReply?.entered_by_host, 0);
 
   const rotated = await guests.rotateGuestLink("e1", added.id);
   assert.equal("token" in rotated, true);
@@ -205,6 +217,52 @@ test("share link creates a guest, enforces the cap, and rate-limits an address",
     now,
   });
   assert.equal("error" in eventLimited && eventLimited.error.includes("party link"), true);
+});
+
+test("checking an invited email spends a share-join attempt", async () => {
+  const { db, guests } = await load();
+  await db.insertInvitee("e1", "invited@example.com", "Invited");
+  const opened = await guests.saveShareSettings("e1", {
+    enabled: true,
+    capRaw: "",
+    currentToken: null,
+    wasEnabled: false,
+  });
+  assert.equal("token" in opened, true);
+  const event = await db.getEvent("e1");
+  assert.ok(event);
+  const ip = "192.0.2.44";
+  const probe = await guests.joinFromShare({
+    event,
+    displayName: "Snoop",
+    email: "invited@example.com",
+    attendingRaw: "yes",
+    comment: "",
+    adults: "1",
+    kids: "0",
+    infants: "0",
+    ip,
+  });
+  assert.equal("error" in probe && probe.error, "That email is already on this guest list.");
+  const attempts = await db.countRows(
+    `SELECT COUNT(*) AS n FROM share_join_attempts WHERE event_id = ? AND ip = ?`,
+    ["e1", ip],
+  );
+  assert.equal(attempts, 1);
+});
+
+test("a reminder claim blocks a second send inside the cooldown", async () => {
+  const { db, guests } = await load();
+  const added = await db.insertInvitee("e1", "remind@example.com", "Remind");
+  const when = "2026-10-04T12:00:00.000Z";
+  assert.equal(await guests.markReminded(added.id, when), true);
+  assert.equal(await guests.markReminded(added.id, when), false);
+  const later = new Date(Date.parse(when) + REMINDER_COOLDOWN_MS).toISOString();
+  assert.equal(await guests.markReminded(added.id, later), true);
+  await guests.restoreReminded(added.id, null);
+  const row = await db.getInviteeForEvent("e1", added.id);
+  assert.equal(row?.last_reminded_at, null);
+  assert.equal(await guests.markReminded(added.id, when), true);
 });
 
 test("email log counts sends since utc midnight", async () => {

@@ -164,11 +164,15 @@ test("guest emails include the personal link and a what-changed block", () => {
   );
 });
 
-test("bulk mail skips opted-out guests and unconfirmed link signups", () => {
-  assert.equal(bulkMailBlocked({ attending: 1, email_opt_out: 1, joined_via: "host" }), true);
-  assert.equal(bulkMailBlocked({ attending: null, joined_via: "link" }), true);
-  assert.equal(bulkMailBlocked({ attending: 1, joined_via: "link" }), false);
-  assert.equal(bulkMailBlocked({ attending: null, joined_via: "host" }), false);
+test("bulk mail skips opted-out guests and unverified link signups", () => {
+  assert.equal(bulkMailBlocked({ attending: 1, email_opt_out: 1, joined_via: "host" }, "everyone"), true);
+  assert.equal(bulkMailBlocked({ attending: null, joined_via: "link" }, "waiting"), true);
+  assert.equal(bulkMailBlocked({ attending: 1, joined_via: "link" }, "everyone"), true);
+  assert.equal(bulkMailBlocked({ attending: 1, joined_via: "link" }, "going"), true);
+  assert.equal(bulkMailBlocked({ attending: 2, joined_via: "link" }, "waiting"), false);
+  assert.equal(bulkMailBlocked({ attending: 2, joined_via: "link" }, "everyone"), true);
+  assert.equal(bulkMailBlocked({ attending: 1, joined_via: "host" }, "going"), false);
+  assert.equal(bulkMailBlocked({ attending: null, joined_via: "host" }, "waiting"), false);
   const now = Date.parse("2026-10-04T12:00:00.000Z");
   assert.equal(remindedRecently("2026-10-04T11:00:00.000Z", now), true);
   assert.equal(remindedRecently(new Date(now - REMINDER_COOLDOWN_MS - 1000).toISOString(), now), false);

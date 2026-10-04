@@ -12,7 +12,6 @@ import {
   getEvent,
   getEventByShareToken,
   getInviteeByToken,
-  getRsvp,
   insertInvitee,
   listInvitees,
   run,
@@ -74,8 +73,10 @@ import {
   removeGuest,
   rotateGuestLink,
   rotateShareLink,
+  rsvpFieldsFromForm,
   saveShareSettings,
   updateGuestContact,
+  upsertRsvp,
 } from "@/lib/guests";
 import { bulkMailBlocked } from "@/lib/guest-list";
 import { changeNote, emailGuestGroup, messageNote, reminderNote } from "@/lib/guest-send";
@@ -495,29 +496,18 @@ export async function saveRsvp(formData: FormData) {
     const message = allowMaybe ? "Please choose yes, maybe, or no." : "Please choose yes or no.";
     redirect(`/rsvp/${token}?error=` + encodeURIComponent(message));
   }
-  const comment = event.ask_comment ? String(formData.get("comment") ?? "").trim() : "";
-  const keepCounts = storesHeadcount(attending);
-  const adults = keepCounts && event.ask_adults ? asCount(formData.get("adults")) : 0;
-  const kids = keepCounts && event.ask_kids ? asCount(formData.get("kids")) : 0;
-  const infants = keepCounts && event.ask_infants ? asCount(formData.get("infants")) : 0;
-  if (keepCounts && goingNeedsPeople(event, adults, kids, infants)) {
+  const fields = rsvpFieldsFromForm(event, {
+    attending,
+    comment: String(formData.get("comment") ?? ""),
+    adults: String(formData.get("adults") ?? ""),
+    kids: String(formData.get("kids") ?? ""),
+    infants: String(formData.get("infants") ?? ""),
+  });
+  if (storesHeadcount(attending) && goingNeedsPeople(event, fields.adults, fields.kids, fields.infants)) {
     redirect(`/rsvp/${token}?error=` + encodeURIComponent("Add at least one person."));
   }
 
-  const existing = await getRsvp(invitee.id);
-  const now = new Date().toISOString();
-  if (existing) {
-    await run(
-      `UPDATE rsvps SET attending = ?, comment = ?, adults = ?, kids = ?, infants = ?, updated_at = ?, entered_by_host = 0 WHERE id = ?`,
-      [attending, comment || null, adults, kids, infants, now, existing.id],
-    );
-  } else {
-    await run(
-      `INSERT INTO rsvps (id, invitee_id, attending, comment, adults, kids, infants, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [newId(), invitee.id, attending, comment || null, adults, kids, infants, now],
-    );
-  }
+  await upsertRsvp(invitee.id, { ...fields, enteredByHost: false });
   revalidatePath(`/rsvp/${token}`);
   redirect(`/rsvp/${token}?done=1`);
 }
