@@ -8,9 +8,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   PUBLIC_EVENT_COLUMNS,
   PUBLIC_EVENT_OPTIONAL_COLUMNS,
+  toEditableEvent,
   toPublicEvent,
   toPublicInvitee,
+  type PublicEvent,
   type PublicEventInput,
+  type PublicInvitee,
 } from "./public-event";
 
 function fullEvent(): PublicEventInput {
@@ -81,6 +84,14 @@ test("toPublicEvent copies guest fields and drops secret columns", () => {
   assert.equal("host_claim_token" in pub, false);
   assert.equal("host_email_verified_at" in pub, false);
   assert.doesNotMatch(encoded, new RegExp([ADMIN, CLAIM, HOST_EMAIL].join("|")));
+
+  const editable = toEditableEvent(secretRow);
+  assert.equal(editable.host_email, HOST_EMAIL);
+  assert.equal(editable.title, "Garden Party");
+  assert.equal("admin_token" in editable, false);
+  assert.equal("host_claim_token" in editable, false);
+  assert.equal("host_email_verified_at" in editable, false);
+  assert.doesNotMatch(JSON.stringify(editable), new RegExp([ADMIN, CLAIM].join("|")));
 
   const again = toPublicEvent(pub);
   assert.equal(again.photo_url, pub.photo_url);
@@ -187,9 +198,10 @@ test("guest RSVP page HTML does not include host secrets", async () => {
   assert.equal(poisonedInvitee.email, GUEST_EMAIL);
   assert.equal(poisonedInvitee.email2, SPOUSE_EMAIL);
   const poisoned = GuestInvite({
-    event: poisonedEvent,
+    event: poisonedEvent as PublicEvent,
     guestName: "The Lees",
-    invitee: poisonedInvitee,
+    invitee: poisonedInvitee as PublicInvitee,
+    token: GUEST_TOKEN,
     rsvp: {
       id: "r1",
       invitee_id: "i1",
@@ -288,12 +300,13 @@ test("a Maybe party stays on the public guest fields", async () => {
       admin_token: ADMIN,
       host_email: HOST_EMAIL,
       host_claim_token: CLAIM,
-    }),
+    }) as PublicEvent,
     guestName: "The Parks",
     invitee: Object.assign(
       { display_name: "The Parks", token: MAYBE_TOKEN, email2: MAYBE_SPOUSE },
       { email: MAYBE_EMAIL },
-    ),
+    ) as PublicInvitee,
+    token: MAYBE_TOKEN,
     rsvp: {
       id: "r-maybe",
       invitee_id: "i-maybe",

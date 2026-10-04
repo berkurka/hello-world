@@ -5,12 +5,7 @@ import { RsvpResponse } from "@/app/components/rsvp-response";
 import { formatInviteWhen, formatWhen, partyHasPassed } from "@/lib/format";
 import { partyImagePath } from "@/lib/party-image";
 import { eventVersion } from "@/lib/party-share";
-import {
-  toPublicEvent,
-  toPublicInvitee,
-  type GuestInviteeInput,
-  type PublicEventInput,
-} from "@/lib/public-event";
+import { toPublicEvent, toPublicInvitee, type PublicEvent, type PublicInvitee } from "@/lib/public-event";
 import { themeById } from "@/lib/themes";
 import type { RsvpRow } from "@/lib/types";
 import type { ReactNode } from "react";
@@ -19,6 +14,7 @@ export function GuestInvite({
   event: source,
   guestName,
   invitee: inviteeSource,
+  token,
   rsvp,
   error,
   preview = false,
@@ -26,9 +22,10 @@ export function GuestInvite({
   maps,
   allowMaybe = false,
 }: {
-  event: PublicEventInput;
+  event: PublicEvent;
   guestName: string;
-  invitee?: GuestInviteeInput | null;
+  invitee?: PublicInvitee | null;
+  token?: string | null;
   rsvp: RsvpRow | null;
   error?: string;
   preview?: boolean;
@@ -65,13 +62,13 @@ export function GuestInvite({
           calendar={calendar}
           maps={maps}
         />
-        {preview || !inviteeSource || !invitee ? (
+        {preview || !invitee || !token ? (
           <div className="card stack">
             <p className="lede">Guests choose Going or Can&apos;t go here.</p>
           </div>
         ) : (
           <RsvpResponse
-            token={inviteeSource.token}
+            token={token}
             event={event}
             invitee={invitee}
             rsvp={rsvp}

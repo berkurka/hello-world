@@ -3,6 +3,7 @@ import { OpenInMaps } from "@/app/components/open-in-maps";
 import { PartyActions } from "@/app/components/party-actions";
 import { icsPath } from "@/lib/app-url";
 import { getGuestInvitee, getPublicEvent, getRsvp } from "@/lib/db";
+import { toPublicEvent, toPublicInvitee } from "@/lib/public-event";
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -18,19 +19,22 @@ export default async function RsvpPage({
   const { error } = await searchParams;
   const invitee = await getGuestInvitee(token);
   if (!invitee) notFound();
-  const event = await getPublicEvent(invitee.event_id);
-  if (!event) notFound();
+  const loaded = await getPublicEvent(invitee.event_id);
+  if (!loaded) notFound();
+  const event = toPublicEvent(loaded);
+  const guest = toPublicInvitee(invitee);
   const rsvp = await getRsvp(invitee.id);
   const place = event.location ?? "";
 
   return (
     <GuestInvite
       event={event}
-      guestName={invitee.display_name}
-      invitee={invitee}
+      guestName={guest.display_name}
+      invitee={guest}
+      token={invitee.token}
       rsvp={rsvp}
       error={error}
-      allowMaybe={(event.allow_maybe ?? 0) !== 0}
+      allowMaybe={event.allow_maybe === 1}
       calendar={
         <PartyActions
           title={event.title}
@@ -43,7 +47,7 @@ export default async function RsvpPage({
           showMaps={false}
         />
       }
-      maps={place.trim() ? <OpenInMaps location={place} /> : null}
+      maps={(event.location ?? "").trim() ? <OpenInMaps location={place} /> : null}
     />
   );
 }

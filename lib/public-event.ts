@@ -100,3 +100,61 @@ export function toPublicInvitee(invitee: {
     : invitee.family === true || invitee.family === 1;
   return { display_name: invitee.display_name, family };
 }
+
+/** Fields the host editor reads. Dashboard tokens stay on the server. */
+export type EditableEvent = {
+  id: string;
+  title: string;
+  starts_at: string;
+  ends_at: string | null;
+  location: string;
+  notes: string;
+  host_name: string;
+  host_email: string | null;
+  timezone: string | null;
+  theme: string;
+  ask_comment: number;
+  ask_adults: number;
+  ask_kids: number;
+  ask_infants: number;
+  allow_maybe: number;
+  party_image_mime: string | null;
+};
+
+export function toEditableEvent(event: {
+  id: string;
+  title: string;
+  starts_at: string;
+  ends_at?: string | null;
+  location?: string | null;
+  notes?: string | null;
+  host_name: string;
+  host_email?: string | null;
+  timezone?: string | null;
+  theme?: string | null;
+  ask_comment: number;
+  ask_adults: number;
+  ask_kids: number;
+  ask_infants: number;
+  allow_maybe?: number | null;
+  party_image_mime?: string | null;
+}): EditableEvent {
+  return {
+    id: event.id,
+    title: event.title,
+    starts_at: event.starts_at,
+    ends_at: event.ends_at ?? null,
+    location: event.location ?? "",
+    notes: event.notes ?? "",
+    host_name: event.host_name,
+    host_email: event.host_email ?? null,
+    timezone: event.timezone ?? null,
+    theme: event.theme || "classic",
+    ask_comment: event.ask_comment,
+    ask_adults: event.ask_adults,
+    ask_kids: event.ask_kids,
+    ask_infants: event.ask_infants,
+    allow_maybe: event.allow_maybe ?? 0,
+    party_image_mime: event.party_image_mime ?? null,
+  };
+}

@@ -7,8 +7,8 @@ import { SubmitButton } from "@/app/components/ui/submit-button";
 import { Switch } from "@/app/components/ui/switch";
 import { BABY_LABEL, formatInviteWhen, isEmail } from "@/lib/format";
 import { fieldKeyFromMessage, inspectPartyImage, partyImagePath } from "@/lib/party-image";
+import type { EditableEvent } from "@/lib/public-event";
 import { THEME_LIST, themeById, type ThemeId } from "@/lib/themes";
-import type { EventRow } from "@/lib/types";
 
 export type EventDraft = {
   title?: string;
@@ -36,7 +36,7 @@ type FieldKey = keyof typeof FIELD_IDS;
 type ActionResult = void | { error?: string };
 
 type Props = {
-  event?: EventRow;
+  event?: EditableEvent;
   draft?: EventDraft;
   initialError?: string;
   action: (formData: FormData) => ActionResult | Promise<ActionResult>;
@@ -54,7 +54,7 @@ function defaultEventDate() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function splitStarts(event?: EventRow, draft?: EventDraft) {
+function splitStarts(event?: EditableEvent, draft?: EventDraft) {
   if (draft?.startsDate && draft?.startsTime) {
     return { date: draft.startsDate, time: draft.startsTime.slice(0, 5) };
   }
@@ -66,7 +66,7 @@ function splitStarts(event?: EventRow, draft?: EventDraft) {
   return { date: defaultEventDate(), time: "18:00" };
 }
 
-function splitEnd(event?: EventRow) {
+function splitEnd(event?: EditableEvent) {
   const raw = event?.ends_at ? event.ends_at.slice(0, 16) : "";
   if (raw.includes("T")) return raw.split("T")[1]?.slice(0, 5) ?? "";
   return "";

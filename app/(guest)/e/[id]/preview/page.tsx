@@ -1,5 +1,6 @@
 import { GuestInvite } from "@/app/components/guest-invite";
 import { authorizeOrganizer } from "@/lib/host-login";
+import { toPublicEvent } from "@/lib/public-event";
 import { readHostCreds } from "@/lib/request-auth";
 import { notFound } from "next/navigation";
 
@@ -16,5 +17,5 @@ export default async function PreviewPage({
   const { t } = await searchParams;
   const auth = await authorizeOrganizer(id, t?.trim() || null, await readHostCreds());
   if (!auth) notFound();
-  return <GuestInvite event={auth.event} guestName="Guest" rsvp={null} preview />;
+  return <GuestInvite event={toPublicEvent(auth.event)} guestName="Guest" rsvp={null} preview />;
 }

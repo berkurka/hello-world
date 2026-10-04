@@ -24,6 +24,7 @@ import { INVITEE_CSV_FILENAME } from "@/lib/invitee-csv";
 import { mailConfigured } from "@/lib/mail";
 import { FIND_PARTIES_PATH } from "@/lib/paths";
 import { peopleComing, replyProgress, statusCounts } from "@/lib/party-stats";
+import { toEditableEvent } from "@/lib/public-event";
 import { readHostCreds } from "@/lib/request-auth";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -92,7 +93,7 @@ export default async function ManageEventPage({
             : `/e/${event.id}/preview`
         }
         editor={
-          <EventForm action={updateEvent} event={event} submitLabel="Save changes" showPreview={false}>
+          <EventForm action={updateEvent} event={toEditableEvent(event)} submitLabel="Save changes" showPreview={false}>
             <input type="hidden" name="eventId" value={event.id} />
             {formToken ? <input type="hidden" name="t" value={formToken} /> : null}
           </EventForm>
