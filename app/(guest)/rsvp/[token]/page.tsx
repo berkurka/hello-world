@@ -1,5 +1,5 @@
 import { GuestInvite } from "@/app/components/guest-invite";
-import { getEvent, getInviteeByToken, getRsvp } from "@/lib/db";
+import { getGuestInvitee, getPublicEvent, getRsvp } from "@/lib/db";
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -13,9 +13,9 @@ export default async function RsvpPage({
 }) {
   const { token } = await params;
   const { error } = await searchParams;
-  const invitee = await getInviteeByToken(token);
+  const invitee = await getGuestInvitee(token);
   if (!invitee) notFound();
-  const event = await getEvent(invitee.event_id);
+  const event = await getPublicEvent(invitee.event_id);
   if (!event) notFound();
   const rsvp = await getRsvp(invitee.id);
 

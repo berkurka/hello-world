@@ -7,12 +7,13 @@ import { SubmitButton } from "@/app/components/ui/submit-button";
 import { RsvpChoice, type RsvpAnswer } from "@/app/components/ui/rsvp-choice";
 import { BABY_LABEL } from "@/lib/format";
 import { goingNeedsPeople } from "@/lib/party-stats";
-import type { EventRow, InviteeRow, RsvpRow } from "@/lib/types";
+import type { PublicEvent, PublicInvitee } from "@/lib/public-event";
+import type { RsvpRow } from "@/lib/types";
 
 type Props = {
   token: string;
-  event: EventRow;
-  invitee: InviteeRow;
+  event: PublicEvent;
+  invitee: PublicInvitee;
   rsvp: RsvpRow | null;
   /** Pass true once the server accepts a Maybe answer. */
   allowMaybe?: boolean;
@@ -20,7 +21,7 @@ type Props = {
 
 function initialCount(
   kind: "adults" | "kids" | "infants",
-  event: EventRow,
+  event: PublicEvent,
   rsvp: RsvpRow | null,
 ) {
   if (rsvp && rsvp.attending === 1) return rsvp[kind] ?? 0;

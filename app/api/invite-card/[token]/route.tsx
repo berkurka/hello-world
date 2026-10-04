@@ -1,4 +1,4 @@
-import { getEvent, getEventImageDataUrl, getInviteeByToken } from "@/lib/db";
+import { getEventImageDataUrl, getGuestInvitee, getPublicEvent } from "@/lib/db";
 import { formatInviteWhen } from "@/lib/format";
 import { inviteCardImage } from "@/lib/invite-card";
 
@@ -9,16 +9,16 @@ export async function GET(
   { params }: { params: Promise<{ token: string }> },
 ) {
   const { token } = await params;
-  const invitee = await getInviteeByToken(token);
+  const invitee = await getGuestInvitee(token);
   if (!invitee) return new Response("Not found", { status: 404 });
-  const event = await getEvent(invitee.event_id);
+  const event = await getPublicEvent(invitee.event_id);
   if (!event) return new Response("Not found", { status: 404 });
   const imageSrc = event.party_image_mime ? await getEventImageDataUrl(event.id) : null;
   return inviteCardImage({
     guestName: invitee.display_name,
     title: event.title,
     when: formatInviteWhen(event.starts_at, event.ends_at),
-    location: event.location,
+    location: event.location ?? "",
     hostName: event.host_name,
     imageSrc,
     theme: event.theme,
