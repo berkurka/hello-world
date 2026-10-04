@@ -194,8 +194,9 @@ export default async function ManageEventPage({
               event={event}
               manageToken={formToken || null}
               mailOn={canEmail}
-              canChangeEmail={canChangeHostEmail(signedInEmail, event.host_email)}
+              canChangeEmail={canChangeHostEmail(signedInEmail, event.host_email, undefined, access)}
               sessionEmail={signedInEmail}
+              access={access}
             />
           </div>
         </div>

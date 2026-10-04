@@ -1,4 +1,5 @@
 import { requestHostEmailChange, resetDashboardLink } from "@/app/actions";
+import type { HostAccess } from "@/lib/host-login";
 import type { EventRow } from "@/lib/types";
 
 export function HostPartySettings({
@@ -7,12 +8,14 @@ export function HostPartySettings({
   mailOn,
   canChangeEmail,
   sessionEmail,
+  access,
 }: {
   event: EventRow;
   manageToken: string | null;
   mailOn: boolean;
   canChangeEmail: boolean;
   sessionEmail: string | null;
+  access: HostAccess;
 }) {
   const adding = !event.host_email;
   return (
@@ -48,11 +51,13 @@ export function HostPartySettings({
         </form>
       ) : (
         <p className="hint" style={{ marginTop: "0.75rem" }}>
-          {mailOn
-            ? adding
-              ? "Sign in, then add that address as the recovery email."
-              : "Sign in from the current host email to change it."
-            : "Email is not set up, so the host email can't be changed from here."}
+          {adding && access === "token"
+            ? "Open this party from the browser that created it to add a recovery email."
+            : mailOn
+              ? adding
+                ? "Sign in, then add that address as the recovery email."
+                : "Sign in from the current host email to change it."
+              : "Email is not set up, so the host email can't be changed from here."}
         </p>
       )}
       <form action={resetDashboardLink} className="stack" style={{ marginTop: "1.25rem" }}>

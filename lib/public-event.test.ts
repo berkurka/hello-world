@@ -11,6 +11,7 @@ import {
   toEditableEvent,
   toPublicEvent,
   toPublicInvitee,
+  toPublicRsvp,
   type PublicEvent,
   type PublicEventInput,
   type PublicInvitee,
@@ -105,6 +106,18 @@ test("toPublicEvent copies guest fields and drops secret columns", () => {
   );
   assert.deepEqual(guest, { display_name: "The Lees", family: true });
   assert.doesNotMatch(JSON.stringify(guest), new RegExp(`${GUEST_EMAIL}|${SPOUSE_EMAIL}|${GUEST_TOKEN}`));
+  const answer = toPublicRsvp({
+    id: "r1",
+    invitee_id: "i1",
+    attending: 1,
+    comment: "See you",
+    adults: 2,
+    kids: 1,
+    infants: 0,
+    updated_at: "2026-10-02T00:00:00.000Z",
+  });
+  assert.equal("invitee_id" in answer, false);
+  assert.doesNotMatch(JSON.stringify(answer), /i1/);
   assert.deepEqual(toPublicInvitee({ display_name: "Sam", family: 1 }), {
     display_name: "Sam",
     family: true,
@@ -182,6 +195,8 @@ test("guest RSVP page HTML does not include host secrets", async () => {
   assert.match(html, /Alex Host/);
   assert.match(decodeHtml(html), new RegExp(FAMILY_HEADING));
   assertNoSecrets(html);
+  assert.equal(html.includes("invitee_id"), false);
+  assert.equal(html.includes("i1"), false);
 
   const poisonedEvent = Object.assign({}, loadedEvent, {
     admin_token: ADMIN,
@@ -216,6 +231,8 @@ test("guest RSVP page HTML does not include host secrets", async () => {
   const poisonedHtml = renderedGuestHtml(poisoned, expand);
   assert.match(decodeHtml(poisonedHtml), new RegExp(FAMILY_HEADING));
   assertNoSecrets(poisonedHtml);
+  assert.equal(poisonedHtml.includes("invitee_id"), false);
+  assert.equal(poisonedHtml.includes("i1"), false);
 });
 
 test("a Maybe party stays on the public guest fields", async () => {
@@ -294,6 +311,8 @@ test("a Maybe party stays on the public guest fields", async () => {
   assertNoSecrets(html);
   assert.equal(html.includes(MAYBE_EMAIL), false);
   assert.equal(html.includes(MAYBE_SPOUSE), false);
+  assert.equal(html.includes("invitee_id"), false);
+  assert.equal(html.includes("i-maybe"), false);
 
   const poisoned = GuestInvite({
     event: Object.assign({}, loadedEvent, {

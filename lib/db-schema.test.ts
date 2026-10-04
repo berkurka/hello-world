@@ -140,6 +140,28 @@ test("startup migration adds missing host and email2 columns and keeps old invit
   assert.equal(await db.applyAllowMaybeBackfill(), false);
   assert.equal((await db.getEvent("e1"))?.allow_maybe, 1);
   assert.equal((await db.getEvent("e2"))?.allow_maybe, 1);
+  const beforeRescope = {
+    e1: (await db.getEvent("e1"))?.allow_maybe,
+    e2: (await db.getEvent("e2"))?.allow_maybe,
+  };
+  await db.run(`DELETE FROM schema_flags WHERE name = ?`, ["allow_maybe_existing_off"]);
+  await db.run(
+    `INSERT INTO events (id, admin_token, title, starts_at, location, host_name, ask_comment, ask_adults, ask_kids, ask_infants, allow_maybe, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 1, 1, 0, 0, 1, ?)`,
+    ["e-old-maybe", "admin-old-maybe", "Old", "2026-11-01T12:00", "", "Alex", "2019-01-01T00:00:00.000Z"],
+  );
+  await db.run(
+    `INSERT INTO events (id, admin_token, title, starts_at, location, host_name, ask_comment, ask_adults, ask_kids, ask_infants, allow_maybe, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 1, 1, 0, 0, 1, ?)`,
+    ["e-new-maybe", "admin-new-maybe", "New", "2026-11-01T12:00", "", "Alex", "2099-01-01T00:00:00.000Z"],
+  );
+  assert.equal(await db.applyAllowMaybeBackfill(), true);
+  assert.equal((await db.getEvent("e-old-maybe"))?.allow_maybe, 0);
+  assert.equal((await db.getEvent("e-new-maybe"))?.allow_maybe, 1);
+  assert.equal(await db.applyAllowMaybeBackfill(), false);
+  assert.equal((await db.getEvent("e-new-maybe"))?.allow_maybe, 1);
+  await db.run(`UPDATE events SET allow_maybe = ? WHERE id = ?`, [beforeRescope.e1 ?? 0, "e1"]);
+  await db.run(`UPDATE events SET allow_maybe = ? WHERE id = ?`, [beforeRescope.e2 ?? 0, "e2"]);
 
   const guest = await db.queryOne<{ id: string }>(
     "SELECT id FROM invitees WHERE display_name = ?",
@@ -211,8 +233,19 @@ test("startup migration adds missing host and email2 columns and keeps old invit
   const replaced = await access.issueLoginToken("fresh@example.com", "login", "198.51.100.21");
   assert.equal(replaced.status, "issued");
   if (replaced.status !== "issued") return;
-  assert.equal(await access.peekLoginToken(fresh.token), null);
+  assert.equal(await access.peekLoginToken(fresh.token), "fresh@example.com");
   assert.equal(await access.peekLoginToken(replaced.token), "fresh@example.com");
+  const newerLogin = await access.issueLoginToken("fresh@example.com", "login", "198.51.100.22");
+  assert.equal(newerLogin.status, "issued");
+  if (newerLogin.status !== "issued") return;
+  assert.equal(await access.peekLoginToken(replaced.token), null);
+  assert.equal(await access.peekLoginToken(fresh.token), "fresh@example.com");
+  assert.equal(await access.peekLoginToken(newerLogin.token), "fresh@example.com");
+  const newerCreate = await access.issueLoginToken("fresh@example.com", "create", "198.51.100.23");
+  assert.equal(newerCreate.status, "issued");
+  if (newerCreate.status !== "issued") return;
+  assert.equal(await access.peekLoginToken(fresh.token), null);
+  assert.equal(await access.peekLoginToken(newerLogin.token), "fresh@example.com");
 
   const burst = await Promise.all(
     Array.from({ length: 5 }, () => access.issueLoginToken("burst@example.com", "login", "192.0.2.10")),
@@ -261,10 +294,31 @@ test("startup migration adds missing host and email2 columns and keeps old invit
     ["e1", "e2"],
   );
   await db.run(`UPDATE events SET host_email = NULL WHERE id = ?`, ["e1"]);
-  assert.equal(await access.attachHostEmail("e1", "Host@Example.com"), true);
+  assert.equal(await access.attachHostEmail("e1", "Host@Example.com", "token"), false);
+  assert.equal((await db.getEvent("e1"))?.host_email, null);
+  assert.equal(await access.attachHostEmail("e1", "Host@Example.com", "device"), true);
   assert.equal((await db.getEvent("e1"))?.host_email, "host@example.com");
   assert.ok((await db.getEvent("e1"))?.host_email_verified_at);
-  assert.equal(await access.attachHostEmail("e1", "other@example.com"), false);
+  assert.equal(await access.attachHostEmail("e1", "other@example.com", "device"), false);
+
+  await db.run(
+    `INSERT INTO events (id, admin_token, title, starts_at, location, host_name, host_email, ask_comment, ask_adults, ask_kids, ask_infants, allow_maybe, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, NULL, 1, 1, 0, 0, 0, ?)`,
+    ["e-open", "admin-open", "Open", "2026-11-02T12:00", "", "Alex", "2026-01-01T00:00:00.000Z"],
+  );
+  const attacker = await access.startSession("attacker@example.com");
+  const viaLink = await access.authorizeOrganizer("e-open", "admin-open", {
+    sessionToken: attacker,
+    deviceToken: null,
+  });
+  assert.equal(viaLink?.access, "token");
+  assert.equal(
+    access.canChangeHostEmail("attacker@example.com", null, "attacker@example.com", viaLink?.access),
+    false,
+  );
+  assert.equal(await access.attachHostEmail("e-open", "attacker@example.com", "token"), false);
+  assert.equal((await db.getEvent("e-open"))?.host_email, null);
+  assert.equal((await db.getEvent("e-open"))?.host_email_verified_at, null);
 
   const device = "device-token";
   await access.grantDevice("e1", device);

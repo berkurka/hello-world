@@ -3,14 +3,13 @@
 import { useState } from "react";
 import { RsvpForm } from "@/app/components/rsvp-form";
 import { countSummary, familyRsvpHeading, weekdayName } from "@/lib/format";
-import type { PublicEvent, PublicInvitee } from "@/lib/public-event";
-import type { RsvpRow } from "@/lib/types";
+import type { PublicEvent, PublicInvitee, PublicRsvp } from "@/lib/public-event";
 
 type Props = {
   token: string;
   event: PublicEvent;
   invitee: PublicInvitee;
-  rsvp: RsvpRow | null;
+  rsvp: PublicRsvp | null;
   openForm?: boolean;
   passed?: boolean;
   allowMaybe?: boolean;
@@ -64,7 +63,7 @@ function Answer({
   event: PublicEvent;
   hostName: string;
   invitee: PublicInvitee;
-  rsvp: RsvpRow;
+  rsvp: PublicRsvp;
 }) {
   const weekday = weekdayName(event.starts_at);
   const counts = rsvp.attending === 1 || rsvp.attending === 2 ? countSummary(event, rsvp) : "";

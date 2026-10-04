@@ -508,21 +508,33 @@ export async function requestHostEmailChange(formData: FormData) {
   if (!email || !isEmail(email)) {
     redirect(managePath(event, { error: "Enter a valid email." }, access));
   }
-  if (!canChangeHostEmail(sessionEmail, event.host_email, email)) {
+  if (!canChangeHostEmail(sessionEmail, event.host_email, email, access)) {
+    const adding = !normalizeStoredEmail(event.host_email);
     redirect(
       managePath(
         event,
         {
-          error: normalizeStoredEmail(event.host_email)
+          error: !adding
             ? "Sign in from the current host email to change it."
-            : "Sign in as that email to add it.",
+            : access !== "device"
+              ? "Open this party from the browser that created it to add a recovery email."
+              : "Sign in as that email to add it.",
         },
         access,
       ),
     );
   }
   if (!normalizeStoredEmail(event.host_email)) {
-    const attached = await attachHostEmail(event.id, email);
+    if (access !== "device") {
+      redirect(
+        managePath(
+          event,
+          { error: "Open this party from the browser that created it to add a recovery email." },
+          access,
+        ),
+      );
+    }
+    const attached = await attachHostEmail(event.id, email, access);
     if (!attached) {
       redirect(managePath(event, { error: "This party already has a host email." }, access));
     }

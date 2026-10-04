@@ -5,9 +5,15 @@ import { RsvpResponse } from "@/app/components/rsvp-response";
 import { formatInviteWhen, formatWhen, partyHasPassed } from "@/lib/format";
 import { partyImagePath } from "@/lib/party-image";
 import { eventVersion } from "@/lib/party-share";
-import { toPublicEvent, toPublicInvitee, type PublicEvent, type PublicInvitee } from "@/lib/public-event";
+import {
+  toPublicEvent,
+  toPublicInvitee,
+  toPublicRsvp,
+  type PublicEvent,
+  type PublicInvitee,
+  type PublicRsvp,
+} from "@/lib/public-event";
 import { themeById } from "@/lib/themes";
-import type { RsvpRow } from "@/lib/types";
 import type { ReactNode } from "react";
 
 export function GuestInvite({
@@ -15,7 +21,7 @@ export function GuestInvite({
   guestName,
   invitee: inviteeSource,
   token,
-  rsvp,
+  rsvp: rsvpSource,
   error,
   preview = false,
   calendar,
@@ -26,7 +32,7 @@ export function GuestInvite({
   guestName: string;
   invitee?: PublicInvitee | null;
   token?: string | null;
-  rsvp: RsvpRow | null;
+  rsvp: (PublicRsvp & { invitee_id?: string }) | null;
   error?: string;
   preview?: boolean;
   calendar?: ReactNode;
@@ -35,6 +41,7 @@ export function GuestInvite({
 }) {
   const event = toPublicEvent(source);
   const invitee = inviteeSource ? toPublicInvitee(inviteeSource) : null;
+  const rsvp = rsvpSource ? toPublicRsvp(rsvpSource) : null;
   const theme = themeById(event.theme);
   const imageSrc = event.party_image_mime ? partyImagePath(event.id, eventVersion(event)) : null;
   const when = formatInviteWhen(event.starts_at, event.ends_at);

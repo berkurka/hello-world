@@ -48,11 +48,13 @@ export function canChangeHostEmail(
   sessionEmail: string | null,
   hostEmail: string | null,
   nextEmail?: string | null,
+  access?: HostAccess,
 ) {
   const session = normalizeStoredEmail(sessionEmail);
   if (!session) return false;
   const host = normalizeStoredEmail(hostEmail);
   if (!host) {
+    if (access !== "device") return false;
     if (nextEmail === undefined) return true;
     return normalizeStoredEmail(nextEmail) === session;
   }
@@ -121,8 +123,8 @@ export async function issueLoginToken(
   );
   if (Number(inserted.rowsAffected) !== 1) return { status: "limited" };
   await run(
-    `UPDATE host_login_tokens SET used_at = ? WHERE email = ? AND used_at IS NULL AND token_hash != ?`,
-    [now.toISOString(), email, hash],
+    `UPDATE host_login_tokens SET used_at = ? WHERE email = ? AND purpose = ? AND used_at IS NULL AND token_hash != ?`,
+    [now.toISOString(), email, purpose, hash],
   );
   return { status: "issued", token };
 }
@@ -351,7 +353,8 @@ export async function issueEmailChange(eventId: string, newEmail: string, previo
   return { ok: true as const, token };
 }
 
-export async function attachHostEmail(eventId: string, email: string) {
+export async function attachHostEmail(eventId: string, email: string, access: HostAccess) {
+  if (access !== "device") return false;
   const normalized = normalizeStoredEmail(email);
   if (!normalized) return false;
   const updated = await run(

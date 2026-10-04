@@ -189,19 +189,28 @@ async function ensureSchema() {
     sql: `UPDATE host_device_grants SET expires_at = ? WHERE expires_at IS NULL`,
     args: [deviceExpiry],
   });
-  await db.execute(`CREATE TABLE IF NOT EXISTS schema_flags (name TEXT PRIMARY KEY)`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS schema_flags (
+    name TEXT PRIMARY KEY,
+    created_at TEXT
+  )`);
+  await addColumnIfMissing("schema_flags", "created_at", "TEXT");
   await backfillAllowMaybeOff(db);
 }
 
 const ALLOW_MAYBE_EXISTING_OFF = "allow_maybe_existing_off";
 
 async function backfillAllowMaybeOff(db: Client) {
+  const markedAt = new Date().toISOString();
   const inserted = await db.execute({
-    sql: `INSERT OR IGNORE INTO schema_flags (name) VALUES (?)`,
-    args: [ALLOW_MAYBE_EXISTING_OFF],
+    sql: `INSERT OR IGNORE INTO schema_flags (name, created_at) VALUES (?, ?)`,
+    args: [ALLOW_MAYBE_EXISTING_OFF, markedAt],
   });
   if (Number(inserted.rowsAffected) !== 1) return false;
-  await db.execute(`UPDATE events SET allow_maybe = 0`);
+  await db.execute({
+    sql: `UPDATE events SET allow_maybe = 0
+          WHERE created_at < (SELECT created_at FROM schema_flags WHERE name = ?)`,
+    args: [ALLOW_MAYBE_EXISTING_OFF],
+  });
   return true;
 }
 

@@ -57,6 +57,16 @@ export type PublicInvitee = {
   family: boolean;
 };
 
+export type PublicRsvp = {
+  id: string;
+  attending: number;
+  comment: string | null;
+  adults: number;
+  kids: number;
+  infants: number;
+  updated_at: string;
+};
+
 export type GuestInviteeInput = {
   display_name: string;
   token: string;
@@ -88,6 +98,18 @@ export function toPublicEvent(event: PublicEventInput): PublicEvent {
   if ("allow_maybe" in event && event.allow_maybe != null) pub.allow_maybe = event.allow_maybe;
   if ("updated_at" in event) pub.updated_at = event.updated_at ?? null;
   return pub;
+}
+
+export function toPublicRsvp(rsvp: PublicRsvp & { invitee_id?: string }): PublicRsvp {
+  return {
+    id: rsvp.id,
+    attending: rsvp.attending,
+    comment: rsvp.comment ?? null,
+    adults: rsvp.adults,
+    kids: rsvp.kids,
+    infants: rsvp.infants,
+    updated_at: rsvp.updated_at,
+  };
 }
 
 export function toPublicInvitee(invitee: {

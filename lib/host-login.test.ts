@@ -55,11 +55,15 @@ test("host email changes follow the signed-in address, including a dashboard lin
   assert.equal(canChangeHostEmail("host@example.com", "Host@Example.com"), true);
   assert.equal(canChangeHostEmail("other@example.com", "host@example.com"), false);
   assert.equal(canChangeHostEmail(null, "host@example.com"), false);
-  assert.equal(canChangeHostEmail("host@example.com", null), true);
-  assert.equal(canChangeHostEmail("host@example.com", null, "host@example.com"), true);
-  assert.equal(canChangeHostEmail("host@example.com", null, "Host@Example.com"), true);
-  assert.equal(canChangeHostEmail("host@example.com", null, "other@example.com"), false);
-  assert.equal(canChangeHostEmail(null, null, "host@example.com"), false);
+  assert.equal(canChangeHostEmail("host@example.com", null), false);
+  assert.equal(canChangeHostEmail("host@example.com", null, "host@example.com", "token"), false);
+  assert.equal(canChangeHostEmail("host@example.com", null, "host@example.com", "session"), false);
+  assert.equal(canChangeHostEmail("host@example.com", null, undefined, "device"), true);
+  assert.equal(canChangeHostEmail("host@example.com", null, "host@example.com", "device"), true);
+  assert.equal(canChangeHostEmail("host@example.com", null, "Host@Example.com", "device"), true);
+  assert.equal(canChangeHostEmail("host@example.com", null, "other@example.com", "device"), false);
+  assert.equal(canChangeHostEmail(null, null, "host@example.com", "device"), false);
+  assert.equal(canChangeHostEmail("host@example.com", "host@example.com", "new@example.com", "token"), true);
 });
 
 test("parties split into upcoming and past by wall-clock start", () => {

@@ -3,7 +3,7 @@ import { OpenInMaps } from "@/app/components/open-in-maps";
 import { PartyActions } from "@/app/components/party-actions";
 import { icsPath } from "@/lib/app-url";
 import { getGuestInvitee, getPublicEvent, getRsvp } from "@/lib/db";
-import { toPublicEvent, toPublicInvitee } from "@/lib/public-event";
+import { toPublicEvent, toPublicInvitee, toPublicRsvp } from "@/lib/public-event";
 import { notFound } from "next/navigation";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +32,7 @@ export default async function RsvpPage({
       guestName={guest.display_name}
       invitee={guest}
       token={invitee.token}
-      rsvp={rsvp}
+      rsvp={rsvp ? toPublicRsvp(rsvp) : null}
       error={error}
       allowMaybe={event.allow_maybe === 1}
       calendar={
