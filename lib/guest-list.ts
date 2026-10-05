@@ -1,5 +1,5 @@
 import { inviteRecipients } from "./invite-delivery";
-import { formatWhen, isEmail, normalizeStoredEmail } from "./format";
+import { formatWhen, normalizeStoredEmail } from "./format";
 
 export const SHARE_JOIN_LIMIT = 30;
 /** Stops one party link from being flooded from many addresses at once. */
@@ -180,12 +180,6 @@ export function describePartyChanges(
     changes.push({ label: "Place", from: fromPlace || "—", to: toPlace || "—" });
   }
   return changes;
-}
-
-export function hostReplyTo(email: string | null | undefined) {
-  const stored = normalizeStoredEmail(email);
-  if (stored && isEmail(stored)) return stored;
-  return undefined;
 }
 
 export function mailSubject(value: string) {

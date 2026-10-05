@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { formatReminded } from "./format";
+import { inviteReplyTo } from "./mail";
 import { changeNoticeContent, guestMessageContent, reminderContent } from "./guest-mail";
 import {
   REMINDER_COOLDOWN_MS,
@@ -10,7 +11,6 @@ import {
   guestEmailNotice,
   guestStatusLabel,
   guestsToCsv,
-  hostReplyTo,
   matchesAudience,
   parseShareCap,
   recipientCount,
@@ -156,8 +156,12 @@ test("guest emails include the personal link and a what-changed block", () => {
   });
   assert.match(message.text, /Bring a chair/);
   assert.match(message.html, /&lt;script&gt;/);
-  assert.equal(hostReplyTo(" Host@Example.com "), "host@example.com");
-  assert.equal(hostReplyTo(""), undefined);
+  assert.equal(
+    inviteReplyTo({ host_email: "host@example.com", host_email_verified_at: "2026-01-01T00:00:00.000Z" }),
+    "host@example.com",
+  );
+  assert.equal(inviteReplyTo({ host_email: "host@example.com", host_email_verified_at: null }), undefined);
+  assert.equal(inviteReplyTo({ host_email: "", host_email_verified_at: "2026-01-01T00:00:00.000Z" }), undefined);
   assert.equal(
     guestEmailNotice({ verb: "Reminded", sentGuests: 2, failed: ["a@b.co"] }),
     "Reminded 2 guests. Could not email a@b.co.",

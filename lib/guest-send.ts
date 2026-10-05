@@ -4,7 +4,6 @@ import { EmailQuotaError } from "./email-budget";
 import { formatInviteWhen } from "./format";
 import {
   guestEmailNotice,
-  hostReplyTo,
   reachableGuests,
   remindedRecently,
   type GuestAudience,
@@ -13,7 +12,7 @@ import {
 import { changeNoticeContent, guestMessageContent, reminderContent } from "./guest-mail";
 import { markReminded, restoreReminded } from "./guests";
 import { inviteRecipients } from "./invite-delivery";
-import { mailConfigured, mailFromHeader, sendPlainGuestEmail } from "./mail";
+import { inviteReplyTo, mailConfigured, mailFromHeader, sendPlainGuestEmail } from "./mail";
 import type { EventRow, InviteeWithRsvp } from "./types";
 
 type Note = { subject: string; text: string; html: string };
@@ -46,7 +45,7 @@ export async function emailGuestGroup(opts: {
     return { notice: message, sentGuests: 0 };
   }
 
-  const replyTo = hostReplyTo(opts.event.host_email);
+  const replyTo = inviteReplyTo(opts.event);
   let sentGuests = 0;
   const failed: string[] = [];
   let stopped: string | undefined;

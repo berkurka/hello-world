@@ -13,6 +13,7 @@ export type ShareJoinDetails = {
   ask_adults: number;
   ask_kids: number;
   ask_infants: number;
+  allow_maybe?: boolean;
 };
 
 export function ShareJoinForm({ shareToken, event }: { shareToken: string; event: ShareJoinDetails }) {
@@ -21,10 +22,11 @@ export function ShareJoinForm({ shareToken, event }: { shareToken: string; event
   const [kids, setKids] = useState(0);
   const [infants, setInfants] = useState(0);
   const [error, setError] = useState("");
-  const showCounts = attending === "yes" && (event.ask_adults || event.ask_kids || event.ask_infants);
+  const counting = attending === "yes" || (event.allow_maybe && attending === "maybe");
+  const showCounts = counting && (event.ask_adults || event.ask_kids || event.ask_infants);
 
   async function submit(formData: FormData) {
-    if (attending === "yes" && goingNeedsPeople(event, adults, kids, infants)) {
+    if (counting && goingNeedsPeople(event, adults, kids, infants)) {
       setError("Add at least one person.");
       return;
     }
@@ -50,7 +52,7 @@ export function ShareJoinForm({ shareToken, event }: { shareToken: string; event
         <input className="control" type="email" name="email" placeholder="alex@example.com" autoComplete="email" />
         <span className="hint">Optional. Only used if the host emails an update.</span>
       </label>
-      <RsvpChoice value={attending} onChange={setAttending} />
+      <RsvpChoice value={attending} onChange={setAttending} allowMaybe={Boolean(event.allow_maybe)} />
       {showCounts ? (
         <div className="stack">
           {event.ask_adults ? <Stepper name="adults" label="Adults" value={adults} onChange={setAdults} /> : null}

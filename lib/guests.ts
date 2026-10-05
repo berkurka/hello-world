@@ -275,8 +275,10 @@ export async function joinFromShare(opts: {
   if (displayName.length > 120) return { error: "That name is too long." };
   const email = normalizeStoredEmail(opts.email) ?? "";
   if (email && !isEmail(email)) return { error: "That email is not valid." };
-  if (opts.attendingRaw !== "yes" && opts.attendingRaw !== "no") {
-    return { error: "Please choose yes or no." };
+  const allowMaybe = opts.event.allow_maybe !== 0;
+  const attending = parseAttending(opts.attendingRaw, allowMaybe);
+  if (attending === null) {
+    return { error: allowMaybe ? "Please choose yes, maybe, or no." : "Please choose yes or no." };
   }
 
   const attempt = await claimShareAttempt(opts.event.id, opts.ip, now);
@@ -288,7 +290,6 @@ export async function joinFromShare(opts: {
     if (taken.has(email)) return { error: "That email is already on this guest list." };
   }
 
-  const attending = opts.attendingRaw === "yes" ? 1 : 0;
   const inviteeId = newId();
   const token = newToken();
   const createdAt = now.toISOString();

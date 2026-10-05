@@ -56,7 +56,7 @@ test("startup migration adds missing host and email2 columns and keeps old invit
   );
   await setup.execute({
     sql: `INSERT INTO rsvps (id, invitee_id, attending, updated_at) VALUES (?, ?, ?, ?)`,
-    args: ["r1", "i1", 1, "2020-01-02T00:00:00.000Z"],
+    args: ["r1", "i1", 0, "2020-01-02T00:00:00.000Z"],
   });
   setup.close();
 
@@ -401,7 +401,7 @@ test("startup migration adds missing host and email2 columns and keeps old invit
     ["i1"],
   );
   assert.equal(kept[0]?.joined_via, "host");
-  assert.equal(kept[0]?.attending, 1);
+  assert.equal(kept[0]?.attending, 0);
   assert.equal(Number(kept[0]?.entered_by_host), 0);
 
   await db.insertInvitee("e1", null, "Link guest", null, "link");

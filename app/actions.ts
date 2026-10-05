@@ -17,7 +17,7 @@ import {
   run,
   saveEventImage,
 } from "@/lib/db";
-import { asBool, asCount, formatInviteWhen, isEmail, normalizeStoredEmail, parseAttending, storesHeadcount } from "@/lib/format";
+import { asBool, formatInviteWhen, isEmail, normalizeStoredEmail, parseAttending, storesHeadcount } from "@/lib/format";
 import {
   attachHostEmail,
   authorizeOrganizer,
