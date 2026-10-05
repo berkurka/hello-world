@@ -25,6 +25,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `SMTP_PASS` | To send email | SMTP password. Resend: your API key. |
 | `MAIL_FROM` | To send email | From address, e.g. `onboarding@resend.dev` or an address on a verified domain. |
 | `FROM_NAME` | Optional | From display name (default `Partyz`). Paired with `MAIL_FROM`, or with `GMAIL_USER` on the legacy path. |
+| `MAIL_DAILY_LIMIT` | Optional | Max emails per UTC day. Default `100` (Resend free plan). Set higher after upgrading Resend, or `0` to turn the local cap off. |
 | `GMAIL_USER` | Legacy fallback | Gmail address. Used only when the SMTP variables above are not all set. |
 | `GMAIL_APP_PASSWORD` | Legacy fallback | Gmail [App Password](https://myaccount.google.com/apppasswords). The from address is `GMAIL_USER`. |
 | `TURSO_DATABASE_URL` | Production on Vercel | Turso database URL (`libsql://…`). Locally, omit this to use `./data/invite.db`. On Vercel without this, the app uses `/tmp/invite.db` (ephemeral). |
@@ -90,6 +91,9 @@ Columns added this way:
 
 - `events.host_email`, `events.host_claim_token`, `events.host_claimed_at`
 - `events.party_image_mime`, `invitees.email2`
+- `events.share_token`, `events.share_enabled` (default 0), `events.share_cap`
+- `invitees.joined_via` (default `host`), `invitees.last_reminded_at`, `invitees.email_opt_out` (default 0)
+- `rsvps.entered_by_host` (default 0)
 - `events.allow_maybe` (default 0 for parties that already existed; new parties set it from the form, on unless the host turns it off), `events.timezone`, `events.ends_at`, `events.updated_at`, `events.host_email_verified_at`
 - index `events_host_email`
 
@@ -99,11 +103,35 @@ Sign-in and recovery mail use the same SMTP settings as invites. There are no ne
 
 Invite card and party image URLs include `?v=` set from `events.updated_at` (or `created_at` when a party has never been edited), so a browser does not keep a year-old card after the date or photo changes. RSVP and dashboard pages send `noindex`. Guest links use the party title, date, and place for link previews.
 
+
+New tables, also created only if missing: `email_sends` (counts toward the daily send cap) and `share_join_attempts` (limits party-link sign-ups per network). `invitees_event_email_v2` is created before the old `invitees_event_email` index is dropped, so filled-in addresses stay unique the whole time. Blank emails (party-link guests) may repeat. Parties start with the party link off. Turning it on creates a link; turning it off and on again replaces that link.
+
+## Guest list, party link, and email
+
+On the manage page, each guest has a **Manage** menu:
+
+- Edit the name and emails.
+- Remove the guest and their RSVP (confirm first).
+- Record a yes/no they gave by text or phone. The list marks that reply “Added by host”. Clearing it puts them back to Pending.
+- Copy the personal link, or replace it when a link was forwarded. The old link stops working.
+
+**Export CSV** downloads `name`, `email`, `email2`, plus status, counts, and comment. The first three columns match the import template, so the file can be edited and imported again (existing emails are skipped; use Edit to rename someone already on the list). **Paste a list** accepts the same columns, separated by commas, semicolons, or tabs.
+
+**Party link** (`/p/…`) is optional. Anyone with it types their name, an optional email, and an RSVP. That creates a guest marked “Joined from link” and opens their personal RSVP page, remembered in a cookie on that phone. A sign-up cap limits how many people can join from the link. Replace the link to stop an old one from spreading. Personal links still work. Sign-ups are limited to 30 per network address per hour.
+
+**Email guests** (only when mail is configured):
+
+- **Remind N waiting** emails guests who have not answered, including a future “Maybe” reply, and shows “Reminded Sep 30” on the row.
+- Saving a new date, time, or place can **email guests about the change**. The box is checked when someone has already replied. The mail includes a “What changed” block. Title-only edits do not send.
+- **Message guests** sends a note to Everyone, Going, or Waiting. Replies go to the host email.
+
+Each button shows how many emails will go out. A family’s second address counts separately. The app stops at 100 emails per UTC day, which matches Resend’s free plan, and turns Resend’s daily-quota error into plain language. Set `MAIL_DAILY_LIMIT` to a higher number after upgrading Resend, or to `0` to turn the local cap off. The count is stored in the same database as the party, so production needs Turso for the cap to survive between requests.
+
 ## Scripts
 
 ```bash
 npm run dev    # local
 npm run build  # production build
 npm start      # run the production build
-npm test       # unit tests (CSV import, party images, family email, mail config)
+npm test       # unit tests (CSV import, guest list, party link, email cap, party images, mail config)
 ```
