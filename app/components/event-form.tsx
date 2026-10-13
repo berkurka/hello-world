@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { InviteCardView } from "@/app/components/invite-card-view";
-import { RsvpChoice } from "@/app/components/ui/rsvp-choice";
+import { RsvpChoice, type RsvpAnswer } from "@/app/components/ui/rsvp-choice";
 import { Stepper } from "@/app/components/ui/stepper";
 import { SubmitButton } from "@/app/components/ui/submit-button";
 import { Switch } from "@/app/components/ui/switch";
@@ -119,6 +119,10 @@ export function EventForm({
   const [askKids, setAskKids] = useState(draft?.askKids ?? event?.ask_kids === 1);
   const [askInfants, setAskInfants] = useState(draft?.askInfants ?? event?.ask_infants === 1);
   const [allowMaybe, setAllowMaybe] = useState(event ? event.allow_maybe !== 0 : true);
+  const [previewAnswer, setPreviewAnswer] = useState<RsvpAnswer | "">("");
+  const [previewAdults, setPreviewAdults] = useState(askAdults ? 1 : 0);
+  const [previewKids, setPreviewKids] = useState(!askAdults && askKids ? 1 : 0);
+  const [previewInfants, setPreviewInfants] = useState(!askAdults && !askKids && askInfants ? 1 : 0);
   const [detailsOpen, setDetailsOpen] = useState(Boolean(event));
   const [tab, setTab] = useState<"edit" | "preview">("edit");
   const [parkSubmit, setParkSubmit] = useState(isCreate);
@@ -293,6 +297,9 @@ export function EventForm({
         )
       : "Date and time";
   const previewImage = removePhoto || photoBroken ? null : photoUrl;
+  const previewPick = previewAnswer === "maybe" && !allowMaybe ? "" : previewAnswer;
+  const showPreviewCounts =
+    (previewPick === "yes" || previewPick === "maybe") && (askAdults || askKids || askInfants);
 
   return (
     <form action={submit} noValidate>
@@ -527,21 +534,28 @@ export function EventForm({
             />
             <div className="card stack">
               <p className="hint">What guests see when they answer</p>
-              <RsvpChoice readOnly allowMaybe={allowMaybe} />
-              {askAdults || askKids || askInfants ? (
+              <RsvpChoice
+                name="previewAttending"
+                value={previewPick}
+                onChange={setPreviewAnswer}
+                allowMaybe={allowMaybe}
+                required={false}
+              />
+              {showPreviewCounts ? (
                 <div className="stack">
                   {askAdults ? (
-                    <Stepper name="previewAdults" label="Adults" value={1} onChange={() => {}} />
+                    <Stepper name="previewAdults" label="Adults" value={previewAdults} onChange={setPreviewAdults} submit={false} />
                   ) : null}
                   {askKids ? (
-                    <Stepper name="previewKids" label="Kids" value={askAdults ? 0 : 1} onChange={() => {}} />
+                    <Stepper name="previewKids" label="Kids" value={previewKids} onChange={setPreviewKids} submit={false} />
                   ) : null}
                   {askInfants ? (
                     <Stepper
                       name="previewInfants"
                       label={BABY_LABEL}
-                      value={askAdults || askKids ? 0 : 1}
-                      onChange={() => {}}
+                      value={previewInfants}
+                      onChange={setPreviewInfants}
+                      submit={false}
                     />
                   ) : null}
                 </div>
