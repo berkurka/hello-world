@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { InviteCardView } from "@/app/components/invite-card-view";
 import { RsvpChoice } from "@/app/components/ui/rsvp-choice";
+import { Stepper } from "@/app/components/ui/stepper";
 import { SubmitButton } from "@/app/components/ui/submit-button";
 import { Switch } from "@/app/components/ui/switch";
 import { BABY_LABEL, formatInviteWhen, isEmail } from "@/lib/format";
@@ -526,7 +527,31 @@ export function EventForm({
             />
             <div className="card stack">
               <p className="hint">What guests see when they answer</p>
-              <RsvpChoice readOnly />
+              <RsvpChoice readOnly allowMaybe={allowMaybe} />
+              {askAdults || askKids || askInfants ? (
+                <div className="stack">
+                  {askAdults ? (
+                    <Stepper name="previewAdults" label="Adults" value={1} onChange={() => {}} />
+                  ) : null}
+                  {askKids ? (
+                    <Stepper name="previewKids" label="Kids" value={askAdults ? 0 : 1} onChange={() => {}} />
+                  ) : null}
+                  {askInfants ? (
+                    <Stepper
+                      name="previewInfants"
+                      label={BABY_LABEL}
+                      value={askAdults || askKids ? 0 : 1}
+                      onChange={() => {}}
+                    />
+                  ) : null}
+                </div>
+              ) : null}
+              {askComment ? (
+                <label className="field">
+                  <span>Note for {hostName.trim() || "You"}</span>
+                  <textarea className="control" rows={3} readOnly tabIndex={-1} />
+                </label>
+              ) : null}
             </div>
           </aside>
         ) : null}
