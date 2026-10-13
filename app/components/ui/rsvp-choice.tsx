@@ -12,6 +12,7 @@ export function RsvpChoice({
   allowMaybe = false,
   name = "attending",
   readOnly = false,
+  required = true,
 }: {
   value?: RsvpAnswer | "";
   onChange?: (value: RsvpAnswer) => void;
@@ -19,6 +20,7 @@ export function RsvpChoice({
   allowMaybe?: boolean;
   name?: string;
   readOnly?: boolean;
+  required?: boolean;
 }) {
   const options = CHOICES.filter((choice) => allowMaybe || choice.value !== "maybe");
   if (readOnly) {
@@ -42,7 +44,7 @@ export function RsvpChoice({
               type="radio"
               name={name}
               value={choice.value}
-              required
+              required={required}
               checked={on}
               onChange={() => onChange?.(choice.value)}
             />
