@@ -3,6 +3,13 @@ import { icsUrl } from "./app-url";
 import { googleCalendarUrl, outlookCalendarUrl } from "./calendar";
 import { getEventImageDataUrl } from "./db";
 import { formatInviteWhen, formatWhen } from "./format";
+import { assertDailyBudget, releaseEmailSend, reserveEmailSend } from "./email-log";
+import {
+  EmailQuotaError,
+  dailyEmailLimit,
+  dailyLimitMessage,
+  isDailyQuotaError,
+} from "./email-budget";
 import { inviteCardPng } from "./invite-card";
 import { inviteEmailHtml } from "./invite-email";
 import { inviteRecipients, type InviteDelivery } from "./invite-delivery";
@@ -112,6 +119,14 @@ const NOT_CONFIGURED_LOG =
   "Email is not configured. Set SMTP_HOST, SMTP_USER, SMTP_PASS, and MAIL_FROM.";
 const NOT_CONFIGURED = "Email sending isn't available right now.";
 
+export function friendlyProviderError(err: unknown) {
+  const raw = providerErrorMessage(err);
+  const limit = dailyEmailLimit() ?? 100;
+  if (err instanceof EmailQuotaError) return err.message;
+  if (isDailyQuotaError(raw)) return dailyLimitMessage(limit, null);
+  return raw;
+}
+
 function requireMailConfig() {
   const config = mailConfigFrom();
   if (!config) {
@@ -203,6 +218,7 @@ export async function sendInviteEmail(opts: {
   if (recipients.length === 0) {
     throw new Error("Invitee has no email address.");
   }
+  await assertDailyBudget(recipients.length);
   const when = formatInviteWhen(event.starts_at, event.ends_at);
   const theme = themeById(event.theme);
   const imageSrc = event.party_image_mime ? await getEventImageDataUrl(event.id) : null;
@@ -246,12 +262,13 @@ export async function sendInviteEmail(opts: {
   const errors: string[] = [];
   for (const email of recipients) {
     try {
-      await transport.sendMail({ ...message, to: email });
+      await withReservedSend(email, "invite", () => transport.sendMail({ ...message, to: email }));
       sent.push(email);
     } catch (err) {
       failed.push(email);
-      const messageText = providerErrorMessage(err);
+      const messageText = friendlyProviderError(err);
       if (!errors.includes(messageText)) errors.push(messageText);
+      if (err instanceof EmailQuotaError) break;
     }
   }
   return errors.length > 0 ? { sent, failed, error: errors.join(" ") } : { sent, failed };
@@ -265,20 +282,21 @@ export async function sendHostClaimEmail(opts: {
   const { event, hostEmail, claimLink } = opts;
   const from = mailFromHeader();
   if (!from) throw new Error(NOT_CONFIGURED);
-  await transporter().sendMail({
-    from,
-    to: hostEmail,
-    subject: `Open your Partyz dashboard: ${event.title}`,
-    text: [
-      `Hi ${event.host_name},`,
-      "",
-      `Your party “${event.title}” is ready.`,
-      "Open the dashboard with this link (no password):",
-      claimLink,
-      "",
-      "This link works until you open it, or for 7 days — whichever comes first. After that, use the dashboard URL you saved when you created the party.",
-    ].join("\n"),
-    html: `
+  await withReservedSend(hostEmail, "claim", () =>
+    transporter().sendMail({
+      from,
+      to: hostEmail,
+      subject: `Open your Partyz dashboard: ${event.title}`,
+      text: [
+        `Hi ${event.host_name},`,
+        "",
+        `Your party “${event.title}” is ready.`,
+        "Open the dashboard with this link (no password):",
+        claimLink,
+        "",
+        "This link works until you open it, or for 7 days — whichever comes first. After that, use the dashboard URL you saved when you created the party.",
+      ].join("\n"),
+      html: `
       <div style="font-family:Arial,Helvetica,sans-serif;color:#241910;max-width:640px">
         <p>Hi ${escapeHtml(event.host_name)},</p>
         <p>Your party <strong>${escapeHtml(event.title)}</strong> is ready.</p>
@@ -287,7 +305,53 @@ export async function sendHostClaimEmail(opts: {
         <p style="color:#6a5648">This link works until you open it, or for 7 days. After that, use the dashboard link you saved when you created the party.</p>
       </div>
     `,
-  });
+    }),
+  );
+}
+
+export async function sendPlainGuestEmail(opts: {
+  to: string;
+  subject: string;
+  text: string;
+  html: string;
+  replyTo?: string;
+  kind: string;
+}) {
+  const from = mailFromHeader();
+  if (!from) throw new Error(NOT_CONFIGURED);
+  try {
+    await withReservedSend(opts.to, opts.kind, () =>
+      transporter().sendMail({
+        from,
+        to: opts.to,
+        subject: opts.subject,
+        text: opts.text,
+        html: opts.html,
+        ...(opts.replyTo ? { replyTo: opts.replyTo } : {}),
+      }),
+    );
+  } catch (err) {
+    if (err instanceof EmailQuotaError) throw err;
+    if (isDailyQuotaError(providerErrorMessage(err))) {
+      throw new EmailQuotaError(dailyLimitMessage(dailyEmailLimit() ?? 100, null));
+    }
+    throw new Error(providerErrorMessage(err));
+  }
+}
+
+async function withReservedSend(to: string, kind: string, send: () => Promise<unknown>) {
+  const reserved = await reserveEmailSend(to, kind);
+  if (!reserved) throw new EmailQuotaError(dailyLimitMessage(dailyEmailLimit() ?? 100, 0));
+  try {
+    await send();
+  } catch (err) {
+    try {
+      await releaseEmailSend(reserved);
+    } catch (releaseErr) {
+      console.error("Could not release an unused email slot:", releaseErr);
+    }
+    throw err;
+  }
 }
 
 export async function sendHostSignInEmail(opts: {
@@ -310,7 +374,8 @@ export async function sendHostSignInEmail(opts: {
       : "This sign-in link expires in 30 minutes and works once. It opens every party for this email.";
   const list =
     opts.kind === "recover" && titles.length > 0 ? `Parties: ${titles.slice(0, 5).join(", ")}` : "";
-  await transporter().sendMail({
+  await withReservedSend(opts.to, "signin", () =>
+    transporter().sendMail({
     from,
     to: opts.to,
     subject,
@@ -325,7 +390,8 @@ export async function sendHostSignInEmail(opts: {
         <p style="color:#5c4638">If you did not ask for this, you can ignore it.</p>
       </div>
     `,
-  });
+    }),
+  );
 }
 
 export async function sendHostEmailChangeNotice(opts: { to: string; title: string; nextEmail: string }) {
@@ -337,19 +403,21 @@ export async function sendHostEmailChangeNotice(opts: { to: string; title: strin
     "The address changes only if that inbox confirms the link we sent there.",
     "If this was not you, sign in and reset the dashboard link.",
   ].join("\n");
-  await transporter().sendMail({
-    from,
-    to: opts.to,
-    subject,
-    text,
-    html: `
+  await withReservedSend(opts.to, "email-change", () =>
+    transporter().sendMail({
+      from,
+      to: opts.to,
+      subject,
+      text,
+      html: `
       <div style="font-family:Georgia,serif;color:#2c1810;max-width:640px">
         <p>Someone asked to change the host email for <strong>${escapeHtml(opts.title)}</strong> to <strong>${escapeHtml(opts.nextEmail)}</strong>.</p>
         <p>The address changes only if that inbox confirms the link we sent there.</p>
         <p>If this was not you, sign in and reset the dashboard link.</p>
       </div>
     `,
-  });
+    }),
+  );
 }
 
 export async function sendHostEmailChangeEmail(opts: {
@@ -361,18 +429,19 @@ export async function sendHostEmailChangeEmail(opts: {
   const from = mailFromHeader();
   if (!from) throw new Error(NOT_CONFIGURED);
   const subject = `Confirm your email for ${opts.title}`;
-  await transporter().sendMail({
-    from,
-    to: opts.to,
-    subject,
-    text: [
-      opts.hostName.trim() ? `Hi ${opts.hostName.trim()},` : "Hi,",
-      "",
-      `Confirm ${opts.to} as the host email for “${opts.title}”.`,
-      "This link expires in 30 minutes and works once:",
-      opts.link,
-    ].join("\n"),
-    html: `
+  await withReservedSend(opts.to, "email-change", () =>
+    transporter().sendMail({
+      from,
+      to: opts.to,
+      subject,
+      text: [
+        opts.hostName.trim() ? `Hi ${opts.hostName.trim()},` : "Hi,",
+        "",
+        `Confirm ${opts.to} as the host email for “${opts.title}”.`,
+        "This link expires in 30 minutes and works once:",
+        opts.link,
+      ].join("\n"),
+      html: `
       <div style="font-family:Georgia,serif;color:#2c1810;max-width:640px">
         <p>${opts.hostName.trim() ? `Hi ${escapeHtml(opts.hostName.trim())},` : "Hi,"}</p>
         <p>Confirm <strong>${escapeHtml(opts.to)}</strong> as the host email for <strong>${escapeHtml(opts.title)}</strong>.</p>
@@ -381,7 +450,8 @@ export async function sendHostEmailChangeEmail(opts: {
         <p style="color:#5c4638">Or paste this link: ${escapeHtml(opts.link)}</p>
       </div>
     `,
-  });
+    }),
+  );
 }
 
 function escapeHtml(value: string) {

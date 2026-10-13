@@ -20,6 +20,9 @@ export type EventRow = {
   timezone: string | null;
   ends_at: string | null;
   updated_at: string | null;
+  share_token: string | null;
+  share_enabled: number;
+  share_cap: number | null;
   created_at: string;
 };
 
@@ -38,6 +41,9 @@ export type InviteeRow = {
   display_name: string;
   token: string;
   invited_at: string | null;
+  joined_via: string;
+  last_reminded_at: string | null;
+  email_opt_out: number;
   created_at: string;
 };
 
@@ -49,6 +55,7 @@ export type RsvpRow = {
   adults: number;
   kids: number;
   infants: number;
+  entered_by_host: number;
   updated_at: string;
 };
 
@@ -59,4 +66,5 @@ export type InviteeWithRsvp = InviteeRow & {
   kids: number | null;
   infants: number | null;
   rsvp_updated_at: string | null;
+  entered_by_host: number | null;
 };

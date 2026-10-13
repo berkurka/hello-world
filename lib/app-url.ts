@@ -9,6 +9,14 @@ export function rsvpUrl(token: string) {
   return `${getAppUrl()}/rsvp/${token}`;
 }
 
+export function shareUrl(token: string) {
+  return `${getAppUrl()}/p/${token}`;
+}
+
+export function optOutUrl(token: string) {
+  return `${getAppUrl()}/opt-out/${token}`;
+}
+
 export function manageUrl(eventId: string, adminToken: string) {
   return `${getAppUrl()}/e/${eventId}/manage?t=${adminToken}`;
 }

@@ -44,6 +44,7 @@ type Props = {
   submitLabel: string;
   showPreview?: boolean;
   children?: React.ReactNode;
+  beforeSubmit?: React.ReactNode;
 };
 
 function defaultEventDate() {
@@ -101,6 +102,7 @@ export function EventForm({
   submitLabel,
   showPreview = true,
   children,
+  beforeSubmit,
 }: Props) {
   const initial = splitStarts(event, draft);
   const isCreate = !event;
@@ -510,6 +512,7 @@ export function EventForm({
                 <Switch name="askInfants" label={BABY_LABEL} checked={askInfants} onChange={setAskInfants} />
               </fieldset>
           </div>
+          {beforeSubmit}
           <div className={parkSubmit ? "sticky-submit is-parked" : "sticky-submit"}>
             <SubmitButton className="block" label={submitLabel} pendingLabel="Saving…" />
           </div>

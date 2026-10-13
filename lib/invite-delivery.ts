@@ -13,6 +13,7 @@ export function appendSendError(text: string, error?: string) {
 const PUBLIC_MAIL_ERRORS = new Set([
   "Email sending isn't available right now.",
   "Invitee has no email address.",
+  "This guest opted out of email.",
 ]);
 
 /** User-facing send failure. Provider text is logged, not returned. */

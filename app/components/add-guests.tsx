@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PasteInviteesForm } from "@/app/components/paste-invitees-form";
 import { SubmitButton } from "@/app/components/ui/submit-button";
 
 export function AddGuests({
@@ -89,6 +90,7 @@ export function AddGuests({
           <SubmitButton label="Import CSV" pendingLabel="Importing…" />
         </form>
       )}
+      {tab === "import" ? <PasteInviteesForm eventId={eventId} token={token} /> : null}
     </section>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { CopyButton, ShareLinkButton, textInviteHref } from "@/app/components/copy-button";
 import { Avatar } from "@/app/components/ui/avatar";
 import { StatusChip } from "@/app/components/ui/status-chip";
@@ -17,6 +17,8 @@ export type GuestCardModel = {
   comment: string;
   invited: string;
   url: string;
+  detail?: string;
+  manage?: ReactNode;
 };
 
 const FILTERS: RsvpStatus[] = ["going", "maybe", "declined", "waiting"];
@@ -29,6 +31,7 @@ export function GuestList({
   canEmail,
   sendInvite,
   showNotes,
+  exportHref,
 }: {
   guests: GuestCardModel[];
   partyTitle: string;
@@ -37,6 +40,7 @@ export function GuestList({
   canEmail: boolean;
   sendInvite: (formData: FormData) => void | Promise<void>;
   showNotes: boolean;
+  exportHref?: string;
 }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<"all" | RsvpStatus>("all");
@@ -67,7 +71,14 @@ export function GuestList({
 
   return (
     <section className="card stack" aria-label="Guest list">
-      <h2>Guests</h2>
+      <div className="section-head">
+        <h2>Guests</h2>
+        {exportHref ? (
+          <a className="btn ghost" href={exportHref}>
+            Export CSV
+          </a>
+        ) : null}
+      </div>
       <label className="field">
         <span className="sr-only">Search guests</span>
         <input
@@ -101,6 +112,7 @@ export function GuestList({
               </div>
               <StatusChip status={guest.status} />
             </div>
+            {guest.detail ? <p className="hint">{guest.detail}</p> : null}
             {guest.counts ? <p>{guest.counts}</p> : null}
             {showNotes && guest.comment ? <p>{guest.comment}</p> : null}
             <InviteStatus invited={guest.invited} />
@@ -112,6 +124,7 @@ export function GuestList({
               canEmail={canEmail}
               sendInvite={sendInvite}
             />
+            {guest.manage}
           </article>
         ))}
       </div>
@@ -143,6 +156,7 @@ export function GuestList({
                 </td>
                 <td>
                   <StatusChip status={guest.status} />
+                  {guest.detail ? <p className="hint">{guest.detail}</p> : null}
                 </td>
                 <td>{guest.counts}</td>
                 {showNotes ? <td>{guest.comment}</td> : null}
@@ -158,6 +172,7 @@ export function GuestList({
                     canEmail={canEmail}
                     sendInvite={sendInvite}
                   />
+                  {guest.manage}
                 </td>
               </tr>
             ))}

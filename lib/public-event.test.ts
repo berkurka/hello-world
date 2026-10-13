@@ -345,6 +345,40 @@ test("a Maybe party stays on the public guest fields", async () => {
   assert.equal(poisonedHtml.includes(MAYBE_SPOUSE), false);
 });
 
+test("party link and opt-out pages do not include host secrets", async () => {
+  const db = await import("./db");
+  await db.readyDb();
+  const shareToken = "public-party-link";
+  await db.run(`UPDATE events SET share_token = ?, share_enabled = 1 WHERE id = ?`, [shareToken, "e1"]);
+
+  const [{ default: SharePage }, { default: OptOutPage }] = await Promise.all([
+    import("../app/p/[token]/page"),
+    import("../app/opt-out/[token]/page"),
+  ]);
+  const share = await SharePage({
+    params: Promise.resolve({ token: shareToken }),
+    searchParams: Promise.resolve({}),
+  });
+  const shareHtml = renderedGuestHtml(share, new Set());
+  assert.match(shareHtml, /Garden Party/);
+  assert.match(shareHtml, /Alex Host/);
+  assertNoSecrets(shareHtml);
+  assert.equal(shareHtml.includes("admin_token"), false);
+  assert.equal(shareHtml.includes("host_claim_token"), false);
+  assert.equal(shareHtml.includes("host_email"), false);
+
+  const optOut = await OptOutPage({
+    params: Promise.resolve({ token: GUEST_TOKEN }),
+    searchParams: Promise.resolve({}),
+  });
+  const optHtml = renderedGuestHtml(optOut, new Set());
+  assert.match(optHtml, /Garden Party/);
+  assert.match(optHtml, /The Lees/);
+  assertNoSecrets(optHtml);
+  assert.equal(optHtml.includes(GUEST_EMAIL), false);
+  assert.equal(optHtml.includes("admin_token"), false);
+});
+
 function decodeHtml(html: string) {
   return html.replace(/&#x27;/g, "'").replace(/&apos;/g, "'");
 }
