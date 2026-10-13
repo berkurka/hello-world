@@ -120,6 +120,9 @@ export function EventForm({
   const [askInfants, setAskInfants] = useState(draft?.askInfants ?? event?.ask_infants === 1);
   const [allowMaybe, setAllowMaybe] = useState(event ? event.allow_maybe !== 0 : true);
   const [previewAnswer, setPreviewAnswer] = useState<RsvpAnswer | "">("");
+  const [previewAdults, setPreviewAdults] = useState(askAdults ? 1 : 0);
+  const [previewKids, setPreviewKids] = useState(!askAdults && askKids ? 1 : 0);
+  const [previewInfants, setPreviewInfants] = useState(!askAdults && !askKids && askInfants ? 1 : 0);
   const [detailsOpen, setDetailsOpen] = useState(Boolean(event));
   const [tab, setTab] = useState<"edit" | "preview">("edit");
   const [parkSubmit, setParkSubmit] = useState(isCreate);
@@ -541,17 +544,18 @@ export function EventForm({
               {showPreviewCounts ? (
                 <div className="stack">
                   {askAdults ? (
-                    <Stepper name="previewAdults" label="Adults" value={1} onChange={() => {}} />
+                    <Stepper name="previewAdults" label="Adults" value={previewAdults} onChange={setPreviewAdults} submit={false} />
                   ) : null}
                   {askKids ? (
-                    <Stepper name="previewKids" label="Kids" value={askAdults ? 0 : 1} onChange={() => {}} />
+                    <Stepper name="previewKids" label="Kids" value={previewKids} onChange={setPreviewKids} submit={false} />
                   ) : null}
                   {askInfants ? (
                     <Stepper
                       name="previewInfants"
                       label={BABY_LABEL}
-                      value={askAdults || askKids ? 0 : 1}
-                      onChange={() => {}}
+                      value={previewInfants}
+                      onChange={setPreviewInfants}
+                      submit={false}
                     />
                   ) : null}
                 </div>

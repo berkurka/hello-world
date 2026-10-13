@@ -5,6 +5,7 @@ export function Stepper({
   min = 0,
   max = 99,
   onChange,
+  submit = true,
 }: {
   name: string;
   label: string;
@@ -12,6 +13,8 @@ export function Stepper({
   min?: number;
   max?: number;
   onChange: (value: number) => void;
+  /** Leave false for a local preview so the number is not posted with the form. */
+  submit?: boolean;
 }) {
   const id = `count-${name}`;
   return (
@@ -30,12 +33,19 @@ export function Stepper({
         <input
           id={id}
           className="control"
-          name={name}
+          name={submit ? name : undefined}
           type="number"
           inputMode="numeric"
           min={min}
           max={max}
           value={value}
+          onKeyDown={
+            submit
+              ? undefined
+              : (e) => {
+                  if (e.key === "Enter") e.preventDefault();
+                }
+          }
           onChange={(e) => {
             const next = Number.parseInt(e.target.value, 10);
             if (Number.isNaN(next)) onChange(min);
