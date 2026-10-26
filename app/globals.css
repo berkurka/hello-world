@@ -773,6 +773,146 @@ button.btn:disabled {
   word-break: break-word;
 }
 
+.guest-list-head,
+.cohost-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.guest-list-head h2,
+.cohost-row span {
+  margin: 0;
+  word-break: break-word;
+}
+
+.guest-edit {
+  width: auto;
+  max-width: 100%;
+}
+
+.guest-edit[open] {
+  flex-basis: 100%;
+}
+
+.guest-edit summary {
+  list-style: none;
+}
+
+.guest-edit summary::-webkit-details-marker {
+  display: none;
+}
+
+.guest-table .actions {
+  min-width: 18rem;
+}
+
+.guest-edit form {
+  margin-top: 0.75rem;
+}
+
+.envelope-stage {
+  position: relative;
+}
+
+.envelope-pocket {
+  display: none;
+}
+
+.envelope-details {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .envelope-reveal[data-play="true"] .envelope-stage {
+    overflow: hidden;
+  }
+
+  .envelope-reveal[data-play="true"] .envelope-card-rise {
+    animation: envelope-card-rise 1.15s cubic-bezier(0.2, 0.7, 0.2, 1) 0.2s both;
+  }
+
+  .envelope-reveal[data-play="true"] .envelope-pocket {
+    display: flex;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 46%;
+    flex-direction: column;
+    justify-content: flex-end;
+    pointer-events: none;
+    perspective: 800px;
+    animation: envelope-pocket 1.45s ease both;
+  }
+
+  .envelope-reveal[data-play="true"] .envelope-flap {
+    height: 54px;
+    transform-origin: top center;
+    background:
+      linear-gradient(to bottom right, transparent 49%, var(--invite-frame, #3b1d2a) 50%) left / 50.1% 100% no-repeat,
+      linear-gradient(to bottom left, transparent 49%, var(--invite-frame, #3b1d2a) 50%) right / 50.1% 100% no-repeat;
+    animation: envelope-flap 0.7s ease both;
+  }
+
+  .envelope-reveal[data-play="true"] .envelope-front {
+    background: #f6e7cf;
+    color: var(--invite-ink, #2c1810);
+    text-align: center;
+    font-family: var(--font-display, Georgia, serif);
+    font-size: 1.45rem;
+    font-weight: 600;
+    padding: 0.4rem 1rem 1.1rem;
+    border-radius: 0 0 18px 18px;
+  }
+
+  .envelope-reveal[data-play="true"] .envelope-details {
+    animation: envelope-details 0.45s ease 1s both;
+  }
+}
+
+@keyframes envelope-card-rise {
+  from {
+    transform: translateY(42%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes envelope-flap {
+  from {
+    transform: rotateX(0deg);
+  }
+  to {
+    transform: rotateX(180deg);
+  }
+}
+
+@keyframes envelope-pocket {
+  0%,
+  62% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes envelope-details {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .guest-table {
   display: none;
 }

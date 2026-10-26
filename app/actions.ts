@@ -6,21 +6,31 @@ import { notFound, redirect } from "next/navigation";
 import { hostEmailChangeUrl, hostLoginUrl, rsvpUrl } from "@/lib/app-url";
 import { isValidTimeZone, resolveEndsAt } from "@/lib/calendar";
 import {
+  addCoHost as insertCoHost,
   deleteEventImage,
+  deleteInvitee,
   emailsUsedOnEvent,
   getEvent,
   getInviteeByToken,
   getRsvp,
   insertInvitee,
+  listCoHosts,
   listInvitees,
+  listRsvpCounts,
+  removeCoHost as deleteCoHost,
   run,
   saveEventImage,
+  saveInvitee,
 } from "@/lib/db";
 import { asBool, asCount, isEmail, normalizeStoredEmail, parseAttending, storesHeadcount } from "@/lib/format";
+import { coHostAddError } from "@/lib/co-host";
+import { inviteeEditError } from "@/lib/guest-edit";
 import {
   attachHostEmail,
   authorizeOrganizer,
   canChangeHostEmail,
+  canManageCoHosts,
+  claimOutboundSend,
   deleteSession,
   issueEmailChange,
   issueHostLogin,
@@ -46,12 +56,27 @@ import {
   GENERIC_MAIL_ERROR,
   mailConfigured,
   providerErrorMessage,
+  sendGuestNotes,
   sendHostEmailChangeEmail,
   sendHostEmailChangeNotice,
   sendHostSignInEmail,
   sendInviteEmail,
 } from "@/lib/mail";
 import { goingNeedsPeople } from "@/lib/party-stats";
+import {
+  deadlineClosedMessage,
+  deadlineHasPassed,
+  goingFitsCap,
+  goingPartySize,
+  isUndecided,
+  othersGoing,
+  parseGuestCap,
+  parseRsvpDeadline,
+  partyFullMessage,
+  partyIsCancelled,
+  readDeadline,
+  readGuestCap,
+} from "@/lib/rsvp-rules";
 import { inspectPartyImage } from "@/lib/party-image";
 import { themeById } from "@/lib/themes";
 import {
@@ -131,7 +156,15 @@ function eventFields(formData: FormData) {
     askAdults: asBool(formData.get("askAdults")) ? 1 : 0,
     askKids: asBool(formData.get("askKids")) ? 1 : 0,
     askInfants: asBool(formData.get("askInfants")) ? 1 : 0,
+    rsvpDeadline: parseRsvpDeadline(required(formData, "rsvpDeadline")),
+    guestCap: parseGuestCap(required(formData, "guestCap")),
   };
+}
+
+function partyLimitError(fields: { rsvpDeadline: string | null | "invalid"; guestCap: number | null | "invalid" }) {
+  if (fields.rsvpDeadline === "invalid") return "RSVP deadline must be a date.";
+  if (fields.guestCap === "invalid") return "Guest cap must be a number of at least 1.";
+  return null;
 }
 
 function endBeforeStart(startsAt: string, endsTime: string) {
@@ -157,6 +190,8 @@ export async function createEvent(formData: FormData) {
   if (!isEmail(hostEmail)) {
     return { error: "Host email is required." };
   }
+  const limitError = partyLimitError(fields);
+  if (limitError) return { error: limitError };
   const image = await readPartyImageInput(formData);
   if (image.kind === "error") return { error: image.error };
   const id = newId();
@@ -167,8 +202,8 @@ export async function createEvent(formData: FormData) {
     `INSERT INTO events (
       id, admin_token, title, starts_at, ends_at, location, notes, host_name, host_email,
       host_claim_token, host_claimed_at, ask_comment, ask_adults, ask_kids, ask_infants,
-      allow_maybe, party_image_mime, theme, timezone, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+      allow_maybe, party_image_mime, theme, timezone, rsvp_deadline, guest_cap, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       adminToken,
@@ -187,6 +222,8 @@ export async function createEvent(formData: FormData) {
       fields.allowMaybe,
       fields.theme,
       fields.timezone,
+      fields.rsvpDeadline === "invalid" ? null : fields.rsvpDeadline,
+      fields.guestCap === "invalid" ? null : fields.guestCap,
       now,
       now,
     ],
@@ -237,13 +274,15 @@ export async function updateEvent(formData: FormData) {
   if (!fields.hostName) {
     return { error: "Host name is required." };
   }
+  const limitError = partyLimitError(fields);
+  if (limitError) return { error: limitError };
   const image = await readPartyImageInput(formData);
   if (image.kind === "error") return { error: image.error };
   await run(
     `UPDATE events
      SET title = ?, starts_at = ?, ends_at = ?, location = ?, notes = ?, host_name = ?,
          ask_comment = ?, ask_adults = ?, ask_kids = ?, ask_infants = ?, allow_maybe = ?,
-         theme = ?, timezone = COALESCE(timezone, ?), updated_at = ?
+         theme = ?, timezone = COALESCE(timezone, ?), rsvp_deadline = ?, guest_cap = ?, updated_at = ?
      WHERE id = ?`,
     [
       fields.title,
@@ -259,6 +298,8 @@ export async function updateEvent(formData: FormData) {
       fields.allowMaybe,
       fields.theme,
       fields.timezone,
+      fields.rsvpDeadline === "invalid" ? null : fields.rsvpDeadline,
+      fields.guestCap === "invalid" ? null : fields.guestCap,
       new Date().toISOString(),
       event.id,
     ],
@@ -339,6 +380,34 @@ export async function importInvitees(formData: FormData) {
     redirect(managePath(event, { error: summary }, access));
   }
   redirect(managePath(event, { notice: summary }, access));
+}
+
+export async function updateInvitee(formData: FormData) {
+  const { event, access } = await requireOrganizer(formData);
+  const inviteeId = required(formData, "inviteeId");
+  const displayName = required(formData, "displayName");
+  const email = normalizeStoredEmail(required(formData, "email"));
+  const email2 = normalizeStoredEmail(required(formData, "email2"));
+  const taken = await emailsUsedOnEvent(event.id, inviteeId);
+  const error = inviteeEditError({ displayName, email, email2, taken });
+  if (error) redirect(managePath(event, { error }, access));
+  try {
+    const saved = await saveInvitee(event.id, inviteeId, email ?? "", displayName, email2);
+    if (!saved) redirect(managePath(event, { error: "That guest is not on this party." }, access));
+  } catch {
+    redirect(managePath(event, { error: "That email is already used on this event." }, access));
+  }
+  revalidatePath(`/e/${event.id}/manage`);
+  redirect(managePath(event, { notice: "Guest updated." }, access));
+}
+
+export async function removeInvitee(formData: FormData) {
+  const { event, access } = await requireOrganizer(formData);
+  const inviteeId = required(formData, "inviteeId");
+  const removed = await deleteInvitee(event.id, inviteeId);
+  if (!removed) redirect(managePath(event, { error: "That guest is not on this party." }, access));
+  revalidatePath(`/e/${event.id}/manage`);
+  redirect(managePath(event, { notice: "Guest removed." }, access));
 }
 
 async function deliverInvite(eventId: string, inviteeId: string) {
@@ -430,6 +499,13 @@ export async function saveRsvp(formData: FormData) {
   if (!invitee) notFound();
   const event = await getEvent(invitee.event_id);
   if (!event) notFound();
+  if (partyIsCancelled(event.cancelled_at)) {
+    redirect(`/rsvp/${token}?error=` + encodeURIComponent("This party is cancelled. Replies are closed."));
+  }
+  const deadline = readDeadline(event.rsvp_deadline);
+  if (deadline && deadlineHasPassed(deadline)) {
+    redirect(`/rsvp/${token}?error=` + encodeURIComponent(deadlineClosedMessage(deadline)));
+  }
 
   const attendingRaw = required(formData, "attending");
   const allowMaybe = event.allow_maybe !== 0;
@@ -445,6 +521,17 @@ export async function saveRsvp(formData: FormData) {
   const infants = keepCounts && event.ask_infants ? asCount(formData.get("infants")) : 0;
   if (keepCounts && goingNeedsPeople(event, adults, kids, infants)) {
     redirect(`/rsvp/${token}?error=` + encodeURIComponent("Add at least one person."));
+  }
+  if (attending === 1) {
+    const cap = readGuestCap(event.guest_cap);
+    const counts = await listRsvpCounts(event.id);
+    const nextGoing = goingPartySize(event, adults, kids, infants);
+    if (!goingFitsCap(cap, othersGoing(event, counts, invitee.id), nextGoing)) {
+      redirect(
+        `/rsvp/${token}?error=` +
+          encodeURIComponent(partyFullMessage(cap ?? nextGoing, allowMaybe)),
+      );
+    }
   }
 
   const existing = await getRsvp(invitee.id);
@@ -604,4 +691,149 @@ export async function resetDashboardLink(formData: FormData) {
       "token",
     ),
   );
+}
+
+export async function messageUndecided(formData: FormData) {
+  const { event, access } = await requireOrganizer(formData);
+  if (partyIsCancelled(event.cancelled_at)) {
+    redirect(managePath(event, { error: "This party is cancelled." }, access));
+  }
+  if (!mailConfigured()) {
+    redirect(managePath(event, { error: "Email is not set up, so reminders can't be sent." }, access));
+  }
+  const invitees = await listInvitees(event.id);
+  const targets = invitees.filter((row) => isUndecided(row.attending));
+  if (targets.length === 0) {
+    redirect(managePath(event, { notice: "Everyone has replied yes or no." }, access));
+  }
+  const claimed = await claimOutboundSend(event.id, "remind");
+  if (!claimed.ok) redirect(managePath(event, { error: claimed.error }, access));
+  const note = required(formData, "note").slice(0, 2000);
+  let delivery;
+  try {
+    delivery = await sendGuestNotes({ event, invitees: targets, note, kind: "remind" });
+  } catch (err) {
+    redirect(managePath(event, { error: friendlyMailError(err) }, access));
+  }
+  revalidatePath(`/e/${event.id}/manage`);
+  if (delivery.sent.length === 0) {
+    redirect(managePath(event, { error: "Could not email those guests." }, access));
+  }
+  const failed = delivery.failed.length > 0 ? ` Could not email ${delivery.failed.join(", ")}.` : "";
+  redirect(
+    managePath(
+      event,
+      { notice: `Reminder sent to ${delivery.sent.length} ${delivery.sent.length === 1 ? "address" : "addresses"}.${failed}` },
+      access,
+    ),
+  );
+}
+
+export async function cancelParty(formData: FormData) {
+  const { event, access } = await requireOrganizer(formData);
+  const now = new Date().toISOString();
+  if (!partyIsCancelled(event.cancelled_at)) {
+    await run(
+      `UPDATE events SET cancelled_at = ?, updated_at = ? WHERE id = ? AND cancelled_at IS NULL`,
+      [now, now, event.id],
+    );
+  }
+  revalidatePath(`/e/${event.id}/manage`);
+  const notify = asBool(formData.get("notify"));
+  if (!notify) redirect(managePath(event, { notice: "Party cancelled." }, access));
+  if (!mailConfigured()) {
+    redirect(managePath(event, { notice: "Party cancelled. Email is not set up, so guests were not messaged." }, access));
+  }
+  const claimed = await claimOutboundSend(event.id, "cancel");
+  if (!claimed.ok) {
+    redirect(managePath(event, { notice: `Party cancelled. ${claimed.error}` }, access));
+  }
+  const invitees = await listInvitees(event.id);
+  const note = required(formData, "note").slice(0, 2000);
+  let delivery;
+  try {
+    delivery = await sendGuestNotes({ event, invitees, note, kind: "cancel" });
+  } catch (err) {
+    redirect(managePath(event, { notice: `Party cancelled. ${friendlyMailError(err)}` }, access));
+  }
+  if (delivery.sent.length === 0) {
+    redirect(managePath(event, { notice: "Party cancelled. The cancellation email could not be sent." }, access));
+  }
+  const failed = delivery.failed.length > 0 ? ` Could not email ${delivery.failed.join(", ")}.` : "";
+  redirect(
+    managePath(
+      event,
+      { notice: `Party cancelled. Emailed ${delivery.sent.length} ${delivery.sent.length === 1 ? "address" : "addresses"}.${failed}` },
+      access,
+    ),
+  );
+}
+
+async function requirePrimaryHost(formData: FormData) {
+  const creds = await readHostCreds();
+  const auth = await requireOrganizer(formData);
+  const sessionEmail = await sessionEmailFromToken(creds.sessionToken);
+  return { ...auth, sessionEmail };
+}
+
+export async function addCoHost(formData: FormData) {
+  const { event, access, sessionEmail } = await requirePrimaryHost(formData);
+  if (!canManageCoHosts(sessionEmail, event.host_email)) {
+    redirect(managePath(event, { error: "Sign in from the host email to add a co-host." }, access));
+  }
+  const email = normalizeStoredEmail(required(formData, "email"));
+  const existing = await listCoHosts(event.id);
+  const error = coHostAddError({
+    email,
+    hostEmail: event.host_email,
+    existing: existing.map((row) => row.email),
+  });
+  if (error || !email) redirect(managePath(event, { error: error ?? "Enter a valid email." }, access));
+  try {
+    await insertCoHost(event.id, email);
+  } catch {
+    redirect(managePath(event, { error: "That co-host is already added." }, access));
+  }
+  let mailed: "sent" | "limited" | "failed" | "skipped" = "skipped";
+  if (mailConfigured()) {
+    const issued = await issueHostLogin(email, await readClientIp());
+    if (issued.status === "limited") mailed = "limited";
+    else if (issued.status === "sent") {
+      try {
+        await sendHostSignInEmail({
+          to: email,
+          link: hostLoginUrl(issued.token),
+          titles: [event.title],
+          kind: "recover",
+        });
+        mailed = "sent";
+      } catch (err) {
+        console.error("co-host sign-in email failed", providerErrorMessage(err));
+        mailed = "failed";
+      }
+    }
+  }
+  revalidatePath(`/e/${event.id}/manage`);
+  revalidatePath("/host");
+  const notice =
+    mailed === "sent"
+      ? `Co-host added. We sent a sign-in link to ${email}.`
+      : mailed === "limited"
+        ? `Co-host added. Too many sign-in emails were just sent, so ${email} can use Find my parties.`
+        : `Co-host added. ${email} can sign in from Find my parties.`;
+  redirect(managePath(event, { notice }, access));
+}
+
+export async function removeCoHost(formData: FormData) {
+  const { event, access, sessionEmail } = await requirePrimaryHost(formData);
+  if (!canManageCoHosts(sessionEmail, event.host_email)) {
+    redirect(managePath(event, { error: "Sign in from the host email to remove a co-host." }, access));
+  }
+  const email = normalizeStoredEmail(required(formData, "email"));
+  if (!email) redirect(managePath(event, { error: "Enter a valid email." }, access));
+  const removed = await deleteCoHost(event.id, email);
+  if (!removed) redirect(managePath(event, { error: "That co-host was not on this party." }, access));
+  revalidatePath(`/e/${event.id}/manage`);
+  revalidatePath("/host");
+  redirect(managePath(event, { notice: "Co-host removed." }, access));
 }

@@ -10,7 +10,7 @@ import {
   PUBLIC_EVENT_OPTIONAL_COLUMNS,
   type PublicEventInput,
 } from "./public-event";
-import type { EventRow, EventImageRow, InviteeRow, InviteeWithRsvp, RsvpRow } from "./types";
+import type { CoHostRow, EventRow, EventImageRow, InviteeRow, InviteeWithRsvp, RsvpRow } from "./types";
 
 export { isEphemeralDb };
 
@@ -82,6 +82,9 @@ async function ensureSchema() {
       timezone TEXT,
       ends_at TEXT,
       updated_at TEXT,
+      rsvp_deadline TEXT,
+      guest_cap INTEGER,
+      cancelled_at TEXT,
       created_at TEXT NOT NULL
     )`,
     `CREATE TABLE IF NOT EXISTS invitees (
@@ -132,6 +135,9 @@ async function ensureSchema() {
   await addColumnIfMissing("events", "timezone", "TEXT");
   await addColumnIfMissing("events", "ends_at", "TEXT");
   await addColumnIfMissing("events", "updated_at", "TEXT");
+  await addColumnIfMissing("events", "rsvp_deadline", "TEXT");
+  await addColumnIfMissing("events", "guest_cap", "INTEGER");
+  await addColumnIfMissing("events", "cancelled_at", "TEXT");
   await db.execute(
     `CREATE UNIQUE INDEX IF NOT EXISTS events_host_claim_token ON events(host_claim_token) WHERE host_claim_token IS NOT NULL`,
   );
@@ -194,6 +200,26 @@ async function ensureSchema() {
     created_at TEXT
   )`);
   await addColumnIfMissing("schema_flags", "created_at", "TEXT");
+  await db.execute(`CREATE TABLE IF NOT EXISTS event_hosts (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    email TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (event_id) REFERENCES events(id)
+  )`);
+  await db.execute(
+    `CREATE UNIQUE INDEX IF NOT EXISTS event_hosts_event_email ON event_hosts(event_id, email)`,
+  );
+  await db.execute(`CREATE INDEX IF NOT EXISTS event_hosts_email ON event_hosts(email)`);
+  await db.execute(`CREATE TABLE IF NOT EXISTS host_outbound_sends (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`);
+  await db.execute(
+    `CREATE INDEX IF NOT EXISTS host_outbound_sends_event_created ON host_outbound_sends(event_id, created_at)`,
+  );
   await backfillAllowMaybeOff(db);
 }
 
@@ -325,10 +351,12 @@ export function listInvitees(eventId: string) {
   );
 }
 
-export async function emailsUsedOnEvent(eventId: string) {
+export async function emailsUsedOnEvent(eventId: string, exceptInviteeId?: string | null) {
   const rows = await query<{ email: string; email2: string | null }>(
-    `SELECT email, email2 FROM invitees WHERE event_id = ?`,
-    [eventId],
+    exceptInviteeId
+      ? `SELECT email, email2 FROM invitees WHERE event_id = ? AND id != ?`
+      : `SELECT email, email2 FROM invitees WHERE event_id = ?`,
+    exceptInviteeId ? [eventId, exceptInviteeId] : [eventId],
   );
   const used = new Set<string>();
   for (const row of rows) {
@@ -373,6 +401,85 @@ export async function deleteEventImage(eventId: string) {
     new Date().toISOString(),
     eventId,
   ]);
+}
+
+export type RsvpCountRow = {
+  invitee_id: string;
+  attending: number | null;
+  adults: number | null;
+  kids: number | null;
+  infants: number | null;
+};
+
+export function listRsvpCounts(eventId: string) {
+  return query<RsvpCountRow>(
+    `SELECT i.id AS invitee_id, r.attending, r.adults, r.kids, r.infants
+     FROM invitees i
+     LEFT JOIN rsvps r ON r.invitee_id = i.id
+     WHERE i.event_id = ?`,
+    [eventId],
+  );
+}
+
+export async function saveInvitee(
+  eventId: string,
+  inviteeId: string,
+  email: string,
+  displayName: string,
+  email2: string | null,
+) {
+  const result = await run(
+    `UPDATE invitees SET email = ?, display_name = ?, email2 = ? WHERE id = ? AND event_id = ?`,
+    [normalizeStoredEmail(email), displayName, normalizeStoredEmail(email2), inviteeId, eventId],
+  );
+  return Number(result.rowsAffected) === 1;
+}
+
+export async function deleteInvitee(eventId: string, inviteeId: string) {
+  const existing = await queryOne<{ id: string }>(
+    `SELECT id FROM invitees WHERE id = ? AND event_id = ?`,
+    [inviteeId, eventId],
+  );
+  if (!existing) return false;
+  await run(`DELETE FROM rsvps WHERE invitee_id = ?`, [inviteeId]);
+  await run(`DELETE FROM invitees WHERE id = ? AND event_id = ?`, [inviteeId, eventId]);
+  return true;
+}
+
+export function listCoHosts(eventId: string) {
+  return query<CoHostRow>(
+    `SELECT id, event_id, email, created_at FROM event_hosts WHERE event_id = ? ORDER BY created_at ASC`,
+    [eventId],
+  );
+}
+
+export async function isEventCoHost(eventId: string, email: string) {
+  const normalized = normalizeStoredEmail(email);
+  if (!normalized) return false;
+  const row = await queryOne<{ id: string }>(
+    `SELECT id FROM event_hosts WHERE event_id = ? AND email = ?`,
+    [eventId, normalized],
+  );
+  return Boolean(row);
+}
+
+export async function addCoHost(eventId: string, email: string) {
+  const normalized = normalizeStoredEmail(email);
+  if (!normalized) return false;
+  await run(`INSERT INTO event_hosts (id, event_id, email, created_at) VALUES (?, ?, ?, ?)`, [
+    newId(),
+    eventId,
+    normalized,
+    new Date().toISOString(),
+  ]);
+  return true;
+}
+
+export async function removeCoHost(eventId: string, email: string) {
+  const normalized = normalizeStoredEmail(email);
+  if (!normalized) return false;
+  const result = await run(`DELETE FROM event_hosts WHERE event_id = ? AND email = ?`, [eventId, normalized]);
+  return Number(result.rowsAffected) === 1;
 }
 
 export function insertInvitee(

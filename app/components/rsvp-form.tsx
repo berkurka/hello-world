@@ -16,6 +16,7 @@ type Props = {
   rsvp: PublicRsvp | null;
   /** Pass true once the server accepts a Maybe answer. */
   allowMaybe?: boolean;
+  serverError?: string;
 };
 
 function initialCount(
@@ -38,12 +39,12 @@ function initialAnswer(rsvp: PublicRsvp | null, allowMaybe: boolean): RsvpAnswer
   return "no";
 }
 
-export function RsvpForm({ token, event, invitee, rsvp, allowMaybe = false }: Props) {
+export function RsvpForm({ token, event, invitee, rsvp, allowMaybe = false, serverError }: Props) {
   const [attending, setAttending] = useState<RsvpAnswer | "">(initialAnswer(rsvp, allowMaybe));
   const [adults, setAdults] = useState(initialCount("adults", event, rsvp));
   const [kids, setKids] = useState(initialCount("kids", event, rsvp));
   const [infants, setInfants] = useState(initialCount("infants", event, rsvp));
-  const [error, setError] = useState("");
+  const [error, setError] = useState(serverError ?? "");
   const showCounts =
     (attending === "yes" || attending === "maybe") && (event.ask_adults || event.ask_kids || event.ask_infants);
 

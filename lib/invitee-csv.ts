@@ -1,4 +1,4 @@
-import { isEmail, normalizeStoredEmail } from "./format";
+import { isEmail, normalizeStoredEmail, rsvpStatus, rsvpStatusLabel } from "./format";
 
 export const INVITEE_CSV_FILENAME = "partyz-invitees-template.csv";
 export const INVITEE_CSV_HEADERS = ["name", "email", "email2"] as const;
@@ -246,6 +246,47 @@ export function applyExistingEmails(
   }
   skips.sort((a, b) => a.line - b.line);
   return { toAdd, skips };
+}
+
+export const RSVP_EXPORT_FILENAME = "partyz-rsvps.csv";
+
+export type RsvpExportRow = {
+  displayName: string;
+  email: string;
+  email2: string | null;
+  attending: number | null;
+  adults: number | null;
+  kids: number | null;
+  infants: number | null;
+  comment: string | null;
+};
+
+function csvCell(value: string) {
+  if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
+/** Same name and email columns as the import template, plus the reply. No guest links. */
+export function exportRsvpsCsv(rows: RsvpExportRow[]) {
+  const header = ["name", "email", "email2", "status", "adults", "kids", "infants", "comment"];
+  const lines = [header.join(",")];
+  for (const row of rows) {
+    lines.push(
+      [
+        row.displayName,
+        row.email,
+        row.email2 ?? "",
+        rsvpStatusLabel(rsvpStatus(row.attending)),
+        row.adults == null ? "" : String(row.adults),
+        row.kids == null ? "" : String(row.kids),
+        row.infants == null ? "" : String(row.infants),
+        row.comment ?? "",
+      ]
+        .map(csvCell)
+        .join(","),
+    );
+  }
+  return `${lines.join("\n")}\n`;
 }
 
 export function summarizeInviteeImport(added: number, skips: InviteeCsvSkip[]) {

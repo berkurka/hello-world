@@ -20,6 +20,16 @@ export type EventRow = {
   timezone: string | null;
   ends_at: string | null;
   updated_at: string | null;
+  rsvp_deadline: string | null;
+  guest_cap: number | null;
+  cancelled_at: string | null;
+  created_at: string;
+};
+
+export type CoHostRow = {
+  id: string;
+  event_id: string;
+  email: string;
   created_at: string;
 };
 

@@ -15,6 +15,8 @@ export function inviteEmailHtml(opts: {
   when: string;
   place: string;
   rsvpLink: string;
+  /** Image click target. Defaults to the RSVP link. */
+  imageLink?: string;
   theme: InviteTheme;
   /** Optional HTML from the calendar work, inserted above the RSVP button. */
   calendarHtml?: string;
@@ -22,6 +24,7 @@ export function inviteEmailHtml(opts: {
   const theme = opts.theme;
   const preheader = [opts.when, opts.place].filter(Boolean).join(" · ");
   const buttonText = theme.accentInk;
+  const imageHref = opts.imageLink || opts.rsvpLink;
   return `<!doctype html>
 <html>
   <body style="margin:0;padding:0;background:${theme.dark ? theme.frame : "#f6f1ea"};">
@@ -32,7 +35,9 @@ export function inviteEmailHtml(opts: {
           <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:${theme.paper};border-radius:16px;overflow:hidden;">
             <tr>
               <td style="padding:0;">
-                <img src="cid:invitation" alt="${escapeHtml(`Invitation to ${opts.title}`)}" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0;" />
+                <a href="${escapeHtml(imageHref)}" style="text-decoration:none;">
+                  <img src="cid:invitation" alt="${escapeHtml(`Invitation to ${opts.title} for ${opts.guestName}`)}" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0;" />
+                </a>
               </td>
             </tr>
             <tr>

@@ -60,6 +60,9 @@ test("startup migration adds missing host and email2 columns and keeps old invit
   assert.ok(eventNames.includes("timezone"));
   assert.ok(eventNames.includes("ends_at"));
   assert.ok(eventNames.includes("updated_at"));
+  assert.ok(eventNames.includes("rsvp_deadline"));
+  assert.ok(eventNames.includes("guest_cap"));
+  assert.ok(eventNames.includes("cancelled_at"));
   const tables = await db.query<{ name: string }>(
     "SELECT name FROM sqlite_master WHERE type = 'table'",
   );
@@ -68,6 +71,8 @@ test("startup migration adds missing host and email2 columns and keeps old invit
   assert.ok(tableNames.includes("host_sessions"));
   assert.ok(tableNames.includes("host_email_changes"));
   assert.ok(tableNames.includes("host_device_grants"));
+  assert.ok(tableNames.includes("event_hosts"));
+  assert.ok(tableNames.includes("host_outbound_sends"));
 
   const migrated = await db.queryOne<{
     allow_maybe: number;
@@ -367,6 +372,58 @@ test("startup migration adds missing host and email2 columns and keeps old invit
   assert.equal((await db.getEvent("e2"))?.host_email, "new-host@example.com");
   assert.ok((await db.getEvent("e2"))?.host_email_verified_at);
   assert.equal(await access.redeemEmailChange(change.token), null);
+
+  const kept = await db.getEvent("e1");
+  assert.equal(kept?.title, "Dinner");
+  assert.equal(kept?.rsvp_deadline, null);
+  assert.equal(kept?.guest_cap, null);
+  assert.equal(kept?.cancelled_at, null);
+  const stillThere = await db.query<{ email: string }>("SELECT email FROM invitees WHERE id = ?", ["i1"]);
+  assert.equal(stillThere[0]?.email, "Old@Example.com");
+
+  await db.addCoHost("e2", "CoHost@example.com");
+  assert.deepEqual(
+    (await access.listEventsForHost("cohost@example.com")).map((event) => event.id),
+    ["e2"],
+  );
+  const coSession = await access.startSession("cohost@example.com");
+  const coAuth = await access.authorizeOrganizer("e2", null, { sessionToken: coSession, deviceToken: null });
+  assert.equal(coAuth?.access, "session");
+  assert.equal(coAuth?.event.id, "e2");
+  assert.equal(access.canChangeHostEmail("cohost@example.com", "new-host@example.com"), false);
+  assert.equal(access.canManageCoHosts("cohost@example.com", "new-host@example.com"), false);
+  assert.equal(access.canManageCoHosts("new-host@example.com", "new-host@example.com"), true);
+  assert.equal(await access.attachHostEmail("e2", "cohost@example.com", "session"), false);
+  assert.equal((await db.getEvent("e2"))?.host_email, "new-host@example.com");
+  const hostParties = await access.listHostParties("cohost@example.com");
+  assert.equal(hostParties.some((party) => party.id === "e2"), true);
+  assert.equal(await db.removeCoHost("e2", "cohost@example.com"), true);
+  assert.equal(
+    await access.authorizeOrganizer("e2", null, { sessionToken: coSession, deviceToken: null }),
+    null,
+  );
+
+  assert.equal((await access.claimOutboundSend("e2", "remind")).ok, true);
+  assert.equal((await access.claimOutboundSend("e2", "remind")).ok, true);
+  assert.equal((await access.claimOutboundSend("e2", "cancel")).ok, true);
+  assert.equal((await access.claimOutboundSend("e2", "remind")).ok, false);
+
+  const editable = await db.queryOne<{ id: string }>(
+    "SELECT id FROM invitees WHERE event_id = ? AND email = ?",
+    ["e1", "new@example.com"],
+  );
+  assert.equal(await db.saveInvitee("e1", editable?.id ?? "", "renamed@example.com", "Renamed", null), true);
+  assert.equal(
+    (await db.queryOne<{ display_name: string }>("SELECT display_name FROM invitees WHERE email = ?", [
+      "renamed@example.com",
+    ]))?.display_name,
+    "Renamed",
+  );
+  assert.equal(await db.deleteInvitee("e1", editable?.id ?? ""), true);
+  assert.equal(
+    await db.queryOne<{ id: string }>("SELECT id FROM invitees WHERE email = ?", ["renamed@example.com"]),
+    null,
+  );
 
   rmSync(dir, { recursive: true, force: true });
 });

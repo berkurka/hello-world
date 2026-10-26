@@ -1,6 +1,7 @@
 import { createEvent } from "@/app/actions";
 import { EventForm } from "@/app/components/event-form";
 import { InviteCardView } from "@/app/components/invite-card-view";
+import { formatSampleInviteWhen, nextSamplePartyStart } from "@/lib/sample-invite";
 
 export default async function Home({
   searchParams,
@@ -54,7 +55,7 @@ export default async function Home({
           theme="classic"
           title="Maya's 7th Birthday"
           guestName="Priya"
-          when="Sat, Oct 17 · 2:00 PM"
+          when={formatSampleInviteWhen(nextSamplePartyStart())}
           place="Riverside Park"
           hostName="Bernardo"
         />

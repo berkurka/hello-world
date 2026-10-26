@@ -28,6 +28,9 @@ export function GuestList({
   token,
   canEmail,
   sendInvite,
+  updateInvitee,
+  removeInvitee,
+  exportHref,
   showNotes,
 }: {
   guests: GuestCardModel[];
@@ -36,6 +39,9 @@ export function GuestList({
   token: string;
   canEmail: boolean;
   sendInvite: (formData: FormData) => void | Promise<void>;
+  updateInvitee: (formData: FormData) => void | Promise<void>;
+  removeInvitee: (formData: FormData) => void | Promise<void>;
+  exportHref: string;
   showNotes: boolean;
 }) {
   const [query, setQuery] = useState("");
@@ -67,7 +73,12 @@ export function GuestList({
 
   return (
     <section className="card stack" aria-label="Guest list">
-      <h2>Guests</h2>
+      <div className="guest-list-head">
+        <h2>Guests</h2>
+        <a className="btn ghost" href={exportHref}>
+          Export RSVPs
+        </a>
+      </div>
       <label className="field">
         <span className="sr-only">Search guests</span>
         <input
@@ -111,6 +122,8 @@ export function GuestList({
               token={token}
               canEmail={canEmail}
               sendInvite={sendInvite}
+              updateInvitee={updateInvitee}
+              removeInvitee={removeInvitee}
             />
           </article>
         ))}
@@ -157,6 +170,8 @@ export function GuestList({
                     token={token}
                     canEmail={canEmail}
                     sendInvite={sendInvite}
+                    updateInvitee={updateInvitee}
+                    removeInvitee={removeInvitee}
                   />
                 </td>
               </tr>
@@ -202,6 +217,8 @@ function GuestActions({
   token,
   canEmail,
   sendInvite,
+  updateInvitee,
+  removeInvitee,
 }: {
   guest: GuestCardModel;
   partyTitle: string;
@@ -209,6 +226,8 @@ function GuestActions({
   token: string;
   canEmail: boolean;
   sendInvite: (formData: FormData) => void | Promise<void>;
+  updateInvitee: (formData: FormData) => void | Promise<void>;
+  removeInvitee: (formData: FormData) => void | Promise<void>;
 }) {
   return (
     <div className="actions">
@@ -234,6 +253,38 @@ function GuestActions({
           />
         </form>
       ) : null}
+      <details className="guest-edit">
+        <summary className="btn ghost">Edit</summary>
+        <form action={updateInvitee} className="stack">
+          <input type="hidden" name="eventId" value={eventId} />
+          <input type="hidden" name="t" value={token} />
+          <input type="hidden" name="inviteeId" value={guest.id} />
+          <label className="field">
+            <span>Name</span>
+            <input className="control" name="displayName" required defaultValue={guest.name} />
+          </label>
+          <label className="field">
+            <span>Email</span>
+            <input className="control" name="email" type="email" required defaultValue={guest.email} />
+          </label>
+          <label className="field">
+            <span>Second email</span>
+            <input className="control" name="email2" type="email" defaultValue={guest.email2 ?? ""} />
+          </label>
+          <SubmitButton variant="secondary" label="Save guest" pendingLabel="Saving…" />
+        </form>
+      </details>
+      <form
+        action={removeInvitee}
+        onSubmit={(event) => {
+          if (!window.confirm(`Remove ${guest.name} from this party?`)) event.preventDefault();
+        }}
+      >
+        <input type="hidden" name="eventId" value={eventId} />
+        <input type="hidden" name="t" value={token} />
+        <input type="hidden" name="inviteeId" value={guest.id} />
+        <SubmitButton variant="danger" label="Remove" pendingLabel="Removing…" />
+      </form>
     </div>
   );
 }

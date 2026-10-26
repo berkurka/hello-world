@@ -119,6 +119,8 @@ export function EventForm({
   const [askKids, setAskKids] = useState(draft?.askKids ?? event?.ask_kids === 1);
   const [askInfants, setAskInfants] = useState(draft?.askInfants ?? event?.ask_infants === 1);
   const [allowMaybe, setAllowMaybe] = useState(event ? event.allow_maybe !== 0 : true);
+  const [rsvpDeadline, setRsvpDeadline] = useState(event?.rsvp_deadline?.slice(0, 10) ?? "");
+  const [guestCap, setGuestCap] = useState(event?.guest_cap ? String(event.guest_cap) : "");
   const [previewAnswer, setPreviewAnswer] = useState<RsvpAnswer | "">("");
   const [previewAdults, setPreviewAdults] = useState(askAdults ? 1 : 0);
   const [previewKids, setPreviewKids] = useState(!askAdults && askKids ? 1 : 0);
@@ -274,6 +276,8 @@ export function EventForm({
     else formData.delete("askInfants");
     if (v.allowMaybe) formData.set("allowMaybe", "on");
     else formData.delete("allowMaybe");
+    formData.set("rsvpDeadline", rsvpDeadline);
+    formData.set("guestCap", guestCap);
     const result = await action(formData);
     if (result && result.error) showIssue(result.error);
   }
@@ -507,6 +511,31 @@ export function EventForm({
                   ))}
                 </div>
               </div>
+              <label className="field">
+                <span>RSVP deadline</span>
+                <input
+                  className="control"
+                  name="rsvpDeadline"
+                  type="date"
+                  value={rsvpDeadline}
+                  onChange={(e) => setRsvpDeadline(e.target.value)}
+                />
+                <span className="hint">Optional. Guests can reply through the end of this day.</span>
+              </label>
+              <label className="field">
+                <span>Guest cap</span>
+                <input
+                  className="control"
+                  name="guestCap"
+                  type="number"
+                  min={1}
+                  inputMode="numeric"
+                  value={guestCap}
+                  onChange={(e) => setGuestCap(e.target.value)}
+                  placeholder="No limit"
+                />
+                <span className="hint">Optional. Maximum number of people who can say going.</span>
+              </label>
               <fieldset className="stack">
                 <legend>What should guests tell you?</legend>
                 <p className="hint">Going and can&apos;t go are always shown.</p>
