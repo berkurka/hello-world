@@ -11,13 +11,39 @@ type Props = {
   invitee: PublicInvitee;
   rsvp: PublicRsvp | null;
   openForm?: boolean;
+  serverError?: string;
   passed?: boolean;
   allowMaybe?: boolean;
+  deadlineClosed?: boolean;
+  deadlineMessage?: string | null;
+  capMessage?: string | null;
 };
 
-export function RsvpResponse({ token, event, invitee, rsvp, openForm, passed, allowMaybe }: Props) {
+export function RsvpResponse({
+  token,
+  event,
+  invitee,
+  rsvp,
+  openForm,
+  serverError,
+  passed,
+  allowMaybe,
+  deadlineClosed,
+  deadlineMessage,
+  capMessage,
+}: Props) {
   const staleMaybe = Boolean(rsvp && rsvp.attending === 2 && !allowMaybe);
   const [editing, setEditing] = useState(!rsvp || Boolean(openForm) || staleMaybe);
+  if (deadlineClosed) {
+    return (
+      <div className="card stack confirm">
+        <h2>RSVPs are closed</h2>
+        {deadlineMessage ? <p className="lede">{deadlineMessage}</p> : null}
+        {serverError ? <p className="flash error">{serverError}</p> : null}
+        {rsvp ? <Answer event={event} hostName={event.host_name} invitee={invitee} rsvp={rsvp} /> : null}
+      </div>
+    );
+  }
   if (passed) {
     return (
       <div className="card stack confirm">
@@ -30,6 +56,8 @@ export function RsvpResponse({ token, event, invitee, rsvp, openForm, passed, al
     return (
       <div className="card stack confirm">
         <Answer event={event} hostName={event.host_name} invitee={invitee} rsvp={rsvp} />
+        {deadlineMessage ? <p className="lede">{deadlineMessage}</p> : null}
+        {capMessage ? <p className="lede">{capMessage}</p> : null}
         <p>
           <button className="btn ghost" type="button" onClick={() => setEditing(true)}>
             Change response
@@ -43,7 +71,16 @@ export function RsvpResponse({ token, event, invitee, rsvp, openForm, passed, al
       {staleMaybe ? (
         <p className="lede">Maybe is no longer an option for this party. Please choose yes or no.</p>
       ) : null}
-      <RsvpForm token={token} event={event} invitee={invitee} rsvp={rsvp} allowMaybe={allowMaybe} />
+      {deadlineMessage ? <p className="lede">{deadlineMessage}</p> : null}
+      {capMessage ? <p className="lede">{capMessage}</p> : null}
+      <RsvpForm
+        token={token}
+        event={event}
+        invitee={invitee}
+        rsvp={rsvp}
+        allowMaybe={allowMaybe}
+        serverError={serverError}
+      />
     </div>
   );
 }

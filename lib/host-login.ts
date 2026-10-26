@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { getEvent, getEventForOrganizer, query, queryOne, run } from "./db";
+import { getEvent, getEventForOrganizer, isEventCoHost, query, queryOne, run } from "./db";
 import { normalizeStoredEmail } from "./format";
 import { newId, newToken } from "./ids";
 import type { EventRow } from "./types";
@@ -16,6 +16,7 @@ export const LOGIN_EMAIL_LIMIT = 3;
 export const CREATE_EMAIL_LIMIT = 10;
 export const LOGIN_IP_LIMIT = 30;
 export const EMAIL_CHANGE_LIMIT = 3;
+export const OUTBOUND_EMAIL_LIMIT = 3;
 
 export const RECOVER_SENT_MESSAGE =
   "If that email has parties on Partyz, we sent a sign-in link. It expires in 30 minutes.";
@@ -61,6 +62,13 @@ export function canChangeHostEmail(
   return session === host;
 }
 
+/** Co-host roster changes stay with the signed-in primary host, not a dashboard link. */
+export function canManageCoHosts(sessionEmail: string | null, hostEmail: string | null) {
+  const session = normalizeStoredEmail(sessionEmail);
+  const host = normalizeStoredEmail(hostEmail);
+  return Boolean(session && host && session === host);
+}
+
 export function splitByStart<T extends { starts_at: string }>(events: T[], now = new Date()) {
   const pad = (n: number) => String(n).padStart(2, "0");
   const key = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
@@ -83,6 +91,7 @@ export async function pruneExpiredHostRows(now = new Date()) {
   const instant = now.toISOString();
   await run(`DELETE FROM host_login_tokens WHERE created_at < ?`, [cutoff]);
   await run(`DELETE FROM host_email_changes WHERE created_at < ?`, [cutoff]);
+  await run(`DELETE FROM host_outbound_sends WHERE created_at < ?`, [cutoff]);
   await run(`DELETE FROM host_sessions WHERE expires_at <= ?`, [instant]);
   await run(`DELETE FROM host_device_grants WHERE expires_at IS NOT NULL AND expires_at <= ?`, [instant]);
 }
@@ -216,8 +225,11 @@ export async function deleteSession(rawToken: string | null) {
 
 export function listEventsForHost(email: string) {
   return query<EventRow>(
-    `SELECT * FROM events WHERE lower(host_email) = lower(?) ORDER BY starts_at ASC`,
-    [email],
+    `SELECT * FROM events e
+     WHERE lower(e.host_email) = lower(?)
+        OR EXISTS (SELECT 1 FROM event_hosts h WHERE h.event_id = e.id AND h.email = lower(?))
+     ORDER BY e.starts_at ASC`,
+    [email, email],
   );
 }
 
@@ -232,9 +244,10 @@ export function listHostParties(email: string) {
      LEFT JOIN invitees i ON i.event_id = e.id
      LEFT JOIN rsvps r ON r.invitee_id = i.id
      WHERE lower(e.host_email) = lower(?)
+        OR EXISTS (SELECT 1 FROM event_hosts h WHERE h.event_id = e.id AND h.email = lower(?))
      GROUP BY e.id
      ORDER BY e.starts_at ASC`,
-    [email],
+    [email, email],
   );
 }
 
@@ -293,8 +306,25 @@ export async function authorizeOrganizer(
   const email = await sessionEmailFromToken(creds.sessionToken);
   const hostEmail = normalizeStoredEmail(event.host_email);
   if (email && hostEmail && email === hostEmail) return { event, access: "session" };
+  if (email && (await isEventCoHost(event.id, email))) return { event, access: "session" };
   if (await deviceAllows(event.id, creds.deviceToken)) return { event, access: "device" };
   return null;
+}
+
+export async function claimOutboundSend(eventId: string, kind: "remind" | "cancel") {
+  await pruneExpiredHostRows();
+  const now = new Date();
+  const since = new Date(now.getTime() - LOGIN_WINDOW_MS).toISOString();
+  const inserted = await run(
+    `INSERT INTO host_outbound_sends (id, event_id, kind, created_at)
+     SELECT ?, ?, ?, ?
+     WHERE (SELECT COUNT(*) FROM host_outbound_sends WHERE event_id = ? AND created_at >= ?) < ?`,
+    [newId(), eventId, kind, now.toISOString(), eventId, since, OUTBOUND_EMAIL_LIMIT],
+  );
+  if (Number(inserted.rowsAffected) !== 1) {
+    return { ok: false as const, error: "Too many guest emails. Try again in an hour." };
+  }
+  return { ok: true as const };
 }
 
 async function retireEmailChanges(eventId: string, now: string, exceptId: string | null = null) {

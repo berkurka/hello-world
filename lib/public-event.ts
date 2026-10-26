@@ -8,7 +8,13 @@ import { partyImagePath } from "./party-image";
 export const PUBLIC_EVENT_COLUMNS =
   "id, title, starts_at, ends_at, timezone, location, host_name, theme, party_image_mime, notes, ask_comment, ask_adults, ask_kids, ask_infants, created_at";
 
-export const PUBLIC_EVENT_OPTIONAL_COLUMNS = ["allow_maybe", "updated_at"] as const;
+export const PUBLIC_EVENT_OPTIONAL_COLUMNS = [
+  "allow_maybe",
+  "updated_at",
+  "rsvp_deadline",
+  "guest_cap",
+  "cancelled_at",
+] as const;
 
 export type PublicEventInput = {
   id: string;
@@ -29,6 +35,9 @@ export type PublicEventInput = {
   created_at?: string | null;
   allow_maybe?: number | null;
   updated_at?: string | null;
+  rsvp_deadline?: string | null;
+  guest_cap?: number | null;
+  cancelled_at?: string | null;
 };
 
 export type PublicEvent = {
@@ -50,6 +59,9 @@ export type PublicEvent = {
   created_at: string;
   allow_maybe?: number;
   updated_at?: string | null;
+  rsvp_deadline?: string | null;
+  guest_cap?: number | null;
+  cancelled_at?: string | null;
 };
 
 export type PublicInvitee = {
@@ -97,6 +109,9 @@ export function toPublicEvent(event: PublicEventInput): PublicEvent {
   };
   if ("allow_maybe" in event && event.allow_maybe != null) pub.allow_maybe = event.allow_maybe;
   if ("updated_at" in event) pub.updated_at = event.updated_at ?? null;
+  if ("rsvp_deadline" in event) pub.rsvp_deadline = event.rsvp_deadline ?? null;
+  if ("guest_cap" in event && event.guest_cap != null) pub.guest_cap = Number(event.guest_cap);
+  if ("cancelled_at" in event) pub.cancelled_at = event.cancelled_at ?? null;
   return pub;
 }
 
@@ -141,6 +156,8 @@ export type EditableEvent = {
   ask_infants: number;
   allow_maybe: number;
   party_image_mime: string | null;
+  rsvp_deadline: string | null;
+  guest_cap: number | null;
 };
 
 export function toEditableEvent(event: {
@@ -160,6 +177,8 @@ export function toEditableEvent(event: {
   ask_infants: number;
   allow_maybe?: number | null;
   party_image_mime?: string | null;
+  rsvp_deadline?: string | null;
+  guest_cap?: number | null;
 }): EditableEvent {
   return {
     id: event.id,
@@ -178,5 +197,7 @@ export function toEditableEvent(event: {
     ask_infants: event.ask_infants,
     allow_maybe: event.allow_maybe ?? 0,
     party_image_mime: event.party_image_mime ?? null,
+    rsvp_deadline: event.rsvp_deadline ?? null,
+    guest_cap: event.guest_cap == null ? null : Number(event.guest_cap),
   };
 }

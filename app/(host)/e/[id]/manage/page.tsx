@@ -1,4 +1,16 @@
-import { addInvitee, importInvitees, sendAllUnsent, sendInvite, updateEvent } from "@/app/actions";
+import {
+  addCoHost,
+  addInvitee,
+  cancelParty,
+  importInvitees,
+  messageUndecided,
+  removeCoHost,
+  removeInvitee,
+  sendAllUnsent,
+  sendInvite,
+  updateEvent,
+  updateInvitee,
+} from "@/app/actions";
 import { AddGuests } from "@/app/components/add-guests";
 import { BackupLink } from "@/app/components/backup-link";
 import { DashboardShell } from "@/app/components/dashboard-shell";
@@ -7,20 +19,23 @@ import { GuestList, type GuestCardModel } from "@/app/components/guest-list";
 import { SharePanel } from "@/app/components/share-panel";
 import { StatusChip } from "@/app/components/ui/status-chip";
 import { HostPartySettings } from "@/app/components/host-party-settings";
+import { PartyHostTools } from "@/app/components/party-host-tools";
 import { WelcomeBanner } from "@/app/components/welcome-banner";
 import { manageUrl, rsvpUrl } from "@/lib/app-url";
-import { listInvitees } from "@/lib/db";
+import { listCoHosts, listInvitees } from "@/lib/db";
 import {
   countSummary,
   formatInviteWhen,
   formatInvitedAt,
   headcountAttending,
+  normalizeStoredEmail,
   peopleLabel,
   rsvpStatus,
   type RsvpStatus,
 } from "@/lib/format";
-import { authorizeOrganizer, canChangeHostEmail, sessionEmailFromToken } from "@/lib/host-login";
-import { INVITEE_CSV_FILENAME } from "@/lib/invitee-csv";
+import { authorizeOrganizer, canChangeHostEmail, canManageCoHosts, sessionEmailFromToken } from "@/lib/host-login";
+import { INVITEE_CSV_FILENAME, RSVP_EXPORT_FILENAME } from "@/lib/invitee-csv";
+import { formatRsvpDeadline, isUndecided, partyIsCancelled, readDeadline, readGuestCap } from "@/lib/rsvp-rules";
 import { mailConfigured } from "@/lib/mail";
 import { FIND_PARTIES_PATH } from "@/lib/paths";
 import { peopleComing, replyProgress, statusCounts } from "@/lib/party-stats";
@@ -49,12 +64,24 @@ export default async function ManageEventPage({
   const formToken = access === "token" ? event.admin_token : "";
   const signedInEmail = await sessionEmailFromToken(creds.sessionToken);
   const invitees = await listInvitees(event.id);
+  const coHosts = await listCoHosts(event.id);
+  const primarySession =
+    normalizeStoredEmail(signedInEmail) === normalizeStoredEmail(event.host_email) && Boolean(signedInEmail);
+  const showBackup = access !== "session" || primarySession;
   const canEmail = mailConfigured();
   const allowMaybe = event.allow_maybe !== 0;
   const coming = peopleComing(event, invitees, allowMaybe);
+  const going = peopleComing(event, invitees, false);
   const progress = replyProgress(invitees);
   const counts = statusCounts(invitees);
   const unsent = invitees.filter((row) => !row.invited_at).length;
+  const undecided = invitees.filter((row) => isUndecided(row.attending)).length;
+  const cancelled = partyIsCancelled(event.cancelled_at);
+  const deadline = readDeadline(event.rsvp_deadline);
+  const guestCap = readGuestCap(event.guest_cap);
+  const exportHref = formToken
+    ? `/e/${event.id}/${RSVP_EXPORT_FILENAME}?t=${encodeURIComponent(formToken)}`
+    : `/e/${event.id}/${RSVP_EXPORT_FILENAME}`;
   const percent = progress.total === 0 ? 0 : Math.round((progress.replied / progress.total) * 100);
   const guests: GuestCardModel[] = invitees.map((row) => ({
     id: row.id,
@@ -72,6 +99,11 @@ export default async function ManageEventPage({
   return (
     <main className="wrap">
       <WelcomeBanner hostEmail={event.host_email} />
+      {cancelled ? (
+        <p className="flash error" style={{ marginBottom: "1rem" }}>
+          This party is cancelled. Guests can see that, and replies are closed.
+        </p>
+      ) : null}
       {access === "session" && signedInEmail ? (
         <p className="hint" style={{ marginBottom: "1rem" }}>
           Signed in as {signedInEmail}.
@@ -120,6 +152,13 @@ export default async function ManageEventPage({
                 <StatusChip key={status} status={status} count={counts[status]} />
               ))}
             </div>
+            {deadline ? <p className="hint">RSVP by {formatRsvpDeadline(deadline)}.</p> : null}
+            {guestCap ? (
+              <p className="hint">
+                Guest cap: {going} of {guestCap} {guestCap === 1 ? "person" : "people"} going.
+                {allowMaybe && coming !== going ? " Maybe replies are not counted toward the cap." : null}
+              </p>
+            ) : null}
             {!allowMaybe && counts.maybe > 0 ? (
               <p className="hint">
                 Maybe is off. Those guests need to choose yes or no, and their counts are not included.
@@ -169,6 +208,9 @@ export default async function ManageEventPage({
                 token={formToken}
                 canEmail={canEmail}
                 sendInvite={sendInvite}
+                updateInvitee={updateInvitee}
+                removeInvitee={removeInvitee}
+                exportHref={exportHref}
                 showNotes={event.ask_comment === 1}
               />
             ) : null}
@@ -189,7 +231,20 @@ export default async function ManageEventPage({
               importInvitees={importInvitees}
               templateHref={`/${INVITEE_CSV_FILENAME}`}
             />
-            <BackupLink url={dashboard} hostEmail={event.host_email} />
+            <PartyHostTools
+              eventId={event.id}
+              token={formToken}
+              cancelled={cancelled}
+              undecided={undecided}
+              canEmail={canEmail}
+              canManageHosts={canManageCoHosts(signedInEmail, event.host_email)}
+              coHosts={coHosts.map((row) => row.email)}
+              messageUndecided={messageUndecided}
+              cancelParty={cancelParty}
+              addCoHost={addCoHost}
+              removeCoHost={removeCoHost}
+            />
+            {showBackup ? <BackupLink url={dashboard} hostEmail={event.host_email} /> : null}
             <HostPartySettings
               event={event}
               manageToken={formToken || null}

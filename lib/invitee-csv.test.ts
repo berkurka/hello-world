@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   applyExistingEmails,
+  exportRsvpsCsv,
   inviteeCsvTemplate,
   parseInviteeCsv,
   summarizeInviteeImport,
@@ -157,4 +158,44 @@ test("treats headerless two-column rows as name then email", () => {
   const plan = parseInviteeCsv("\uFEFFAlex Example,alex@example.com\n");
   assert.equal(plan.toAdd[0]?.displayName, "Alex Example");
   assert.equal(plan.toAdd[0]?.email, "alex@example.com");
+});
+
+test("exported RSVPs keep import columns and leave out guest links", () => {
+  const secret = "guest-token-should-not-export";
+  const csv = exportRsvpsCsv([
+    {
+      displayName: 'Lee, "Alex"',
+      email: "alex@example.com",
+      email2: "jordan@example.com",
+      attending: 1,
+      adults: 2,
+      kids: 0,
+      infants: null,
+      comment: "See you\nthere",
+    },
+    {
+      displayName: "Sam Guest",
+      email: "sam@example.com",
+      email2: null,
+      attending: null,
+      adults: null,
+      kids: null,
+      infants: null,
+      comment: null,
+    },
+  ]);
+  assert.match(csv, /^name,email,email2,status,adults,kids,infants,comment\n/);
+  assert.match(csv, /"Lee, ""Alex"""/);
+  assert.match(csv, /Going/);
+  assert.match(csv, /Waiting/);
+  assert.doesNotMatch(csv, new RegExp(secret));
+  assert.doesNotMatch(csv, /admin_token|\?t=/);
+  const plan = parseInviteeCsv(csv);
+  assert.deepEqual(
+    plan.toAdd.map((row) => [row.displayName, row.email, row.email2]),
+      [
+        ['Lee, "Alex"', "alex@example.com", "jordan@example.com"],
+        ["Sam Guest", "sam@example.com", null],
+      ],
+  );
 });

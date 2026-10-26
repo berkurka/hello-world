@@ -1,8 +1,11 @@
 import nodemailer, { type Transporter } from "nodemailer";
-import { icsUrl } from "./app-url";
+import { icsUrl, rsvpUrl } from "./app-url";
 import { googleCalendarUrl, outlookCalendarUrl } from "./calendar";
 import { getEventImageDataUrl } from "./db";
 import { formatInviteWhen, formatWhen } from "./format";
+import { envelopeCardPng } from "./envelope-card";
+import { envelopeRsvpHref } from "./envelope";
+import { cancellationMail, reminderMail } from "./guest-mail";
 import { inviteCardPng } from "./invite-card";
 import { inviteEmailHtml } from "./invite-email";
 import { inviteRecipients, type InviteDelivery } from "./invite-delivery";
@@ -183,7 +186,9 @@ export function buildInviteMail(opts: { event: EventRow; invitee: InviteeRow; rs
         <p>Hi ${escapeHtml(invitee.display_name)},</p>
         <p>${escapeHtml(event.host_name)} invited you to <strong>${escapeHtml(event.title)}</strong>.</p>
         <p>
-          <img src="cid:invitation" alt="Invitation for ${escapeHtml(invitee.display_name)}" style="width:100%;max-width:640px;border:1px solid #e6d9c8" />
+          <a href="${escapeHtml(envelopeRsvpHref(rsvpLink))}" style="text-decoration:none;">
+            <img src="cid:invitation" alt="Invitation for ${escapeHtml(invitee.display_name)}" style="width:100%;max-width:640px;border:1px solid #e6d9c8" />
+          </a>
         </p>
         <p><a href="${rsvpLink}" style="display:inline-block;background:#8b2942;color:#fff;padding:12px 18px;text-decoration:none;border-radius:4px">RSVP now</a></p>
         <p style="color:#5c4638">${links.join(" · ")}</p>
@@ -206,7 +211,7 @@ export async function sendInviteEmail(opts: {
   const when = formatInviteWhen(event.starts_at, event.ends_at);
   const theme = themeById(event.theme);
   const imageSrc = event.party_image_mime ? await getEventImageDataUrl(event.id) : null;
-  const png = await inviteCardPng({
+  const cardProps = {
     guestName: invitee.display_name,
     title: event.title,
     when,
@@ -214,7 +219,14 @@ export async function sendInviteEmail(opts: {
     hostName: event.host_name,
     imageSrc,
     theme: theme.id,
-  });
+  };
+  let png: Buffer;
+  try {
+    png = await envelopeCardPng(cardProps);
+  } catch (err) {
+    console.error("envelope card failed", providerErrorMessage(err));
+    png = await inviteCardPng(cardProps);
+  }
   const from = hostFromHeader(event.host_name);
   if (!from) throw new Error(NOT_CONFIGURED);
   const content = buildInviteMail({ event, invitee, rsvpLink });
@@ -230,6 +242,7 @@ export async function sendInviteEmail(opts: {
       when,
       place: event.location,
       rsvpLink,
+      imageLink: envelopeRsvpHref(rsvpLink),
       theme,
     }),
     attachments: [
@@ -252,6 +265,61 @@ export async function sendInviteEmail(opts: {
       failed.push(email);
       const messageText = providerErrorMessage(err);
       if (!errors.includes(messageText)) errors.push(messageText);
+    }
+  }
+  return errors.length > 0 ? { sent, failed, error: errors.join(" ") } : { sent, failed };
+}
+
+export async function sendGuestNotes(opts: {
+  event: EventRow;
+  invitees: Pick<InviteeRow, "display_name" | "email" | "email2" | "token">[];
+  note: string;
+  kind: "remind" | "cancel";
+}): Promise<InviteDelivery> {
+  const from = hostFromHeader(opts.event.host_name);
+  if (!from) throw new Error(NOT_CONFIGURED);
+  const when = formatWhen(opts.event.starts_at);
+  const transport = transporter();
+  const sent: string[] = [];
+  const failed: string[] = [];
+  const errors: string[] = [];
+  for (const invitee of opts.invitees) {
+    const recipients = inviteRecipients(invitee);
+    const link = rsvpUrl(invitee.token);
+    const content =
+      opts.kind === "cancel"
+        ? cancellationMail({
+            guestName: invitee.display_name,
+            hostName: opts.event.host_name,
+            title: opts.event.title,
+            rsvpLink: link,
+            note: opts.note,
+          })
+        : reminderMail({
+            guestName: invitee.display_name,
+            hostName: opts.event.host_name,
+            title: opts.event.title,
+            when,
+            place: opts.event.location,
+            rsvpLink: link,
+            note: opts.note,
+          });
+    for (const email of recipients) {
+      try {
+        await transport.sendMail({
+          from,
+          to: email,
+          replyTo: inviteReplyTo(opts.event),
+          subject: content.subject,
+          text: content.text,
+          html: content.html,
+        });
+        sent.push(email);
+      } catch (err) {
+        failed.push(email);
+        const messageText = providerErrorMessage(err);
+        if (!errors.includes(messageText)) errors.push(messageText);
+      }
     }
   }
   return errors.length > 0 ? { sent, failed, error: errors.join(" ") } : { sent, failed };
