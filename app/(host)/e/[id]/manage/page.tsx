@@ -125,7 +125,7 @@ export default async function ManageEventPage({
             : `/e/${event.id}/preview`
         }
         editor={
-          <EventForm action={updateEvent} event={toEditableEvent(event)} submitLabel="Save changes" showPreview={false}>
+          <EventForm action={updateEvent} event={toEditableEvent(event)} submitLabel="Save changes">
             <input type="hidden" name="eventId" value={event.id} />
             {formToken ? <input type="hidden" name="t" value={formToken} /> : null}
           </EventForm>
