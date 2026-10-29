@@ -400,10 +400,6 @@ button.btn:disabled {
   border-top: 0;
 }
 
-.composer-tabs {
-  margin-bottom: 0.9rem;
-}
-
 .segmented {
   display: flex;
   flex-wrap: nowrap;
@@ -453,41 +449,6 @@ button.btn:disabled {
   background: var(--card);
   color: var(--ink);
   box-shadow: 0 1px 3px rgba(50, 24, 16, 0.12);
-}
-
-.composer-preview {
-  display: none;
-}
-
-.composer.show-preview .composer-form {
-  display: none;
-}
-
-.composer.show-preview .composer-preview {
-  display: block;
-}
-
-@media (min-width: 960px) {
-  .composer {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
-    gap: 1.5rem;
-    align-items: start;
-  }
-
-  .composer-tabs {
-    display: none;
-  }
-
-  .composer-preview,
-  .composer.show-preview .composer-form {
-    display: block;
-  }
-
-  .composer-preview {
-    position: sticky;
-    top: 5rem;
-  }
 }
 
 .counts {
@@ -1084,6 +1045,45 @@ th {
   font-weight: 700;
 }
 
+.docked-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.docked-preview-head,
+.docked-preview-stage {
+  width: 100%;
+  max-width: 680px;
+}
+
+.docked-preview-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.docked-preview-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+@media (min-width: 960px) {
+  .composer {
+    max-width: 680px;
+  }
+}
+
+.preview-placeholder {
+  color: var(--muted);
+  font-style: italic;
+  font-weight: 500;
+}
+
 .invite {
   border-radius: 18px;
   box-shadow: var(--shadow);
@@ -1157,8 +1157,14 @@ th {
 
 .invite-for,
 .invite-where,
-.invite-host {
+.invite-host,
+.invite-notes {
   color: var(--invite-muted);
+}
+
+.invite-notes {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .invite-when {
@@ -1170,6 +1176,12 @@ th {
   color: var(--invite-accent);
   font-weight: 700;
   margin-top: 0.35rem;
+}
+
+.invite-host.is-placeholder {
+  color: var(--invite-muted);
+  font-weight: 500;
+  font-style: italic;
 }
 
 .invite[data-display="fraunces"] {

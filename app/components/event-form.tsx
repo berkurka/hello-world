@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { InviteCardView } from "@/app/components/invite-card-view";
+import { InviteCardView, themeVars } from "@/app/components/invite-card-view";
 import { RsvpChoice, type RsvpAnswer } from "@/app/components/ui/rsvp-choice";
 import { Stepper } from "@/app/components/ui/stepper";
 import { SubmitButton } from "@/app/components/ui/submit-button";
@@ -42,7 +42,6 @@ type Props = {
   initialError?: string;
   action: (formData: FormData) => ActionResult | Promise<ActionResult>;
   submitLabel: string;
-  showPreview?: boolean;
   children?: React.ReactNode;
 };
 
@@ -99,7 +98,6 @@ export function EventForm({
   initialError,
   action,
   submitLabel,
-  showPreview = true,
   children,
 }: Props) {
   const initial = splitStarts(event, draft);
@@ -126,7 +124,6 @@ export function EventForm({
   const [previewKids, setPreviewKids] = useState(!askAdults && askKids ? 1 : 0);
   const [previewInfants, setPreviewInfants] = useState(!askAdults && !askKids && askInfants ? 1 : 0);
   const [detailsOpen, setDetailsOpen] = useState(Boolean(event));
-  const [tab, setTab] = useState<"edit" | "preview">("edit");
   const [parkSubmit, setParkSubmit] = useState(isCreate);
   const [error, setError] = useState(initialError ?? "");
   const [invalidKey, setInvalidKey] = useState<FieldKey | "">(
@@ -183,7 +180,6 @@ export function EventForm({
 
   useEffect(() => {
     if (!error) return;
-    setTab("edit");
     scrollToIssue(invalidKey);
   }, [error, invalidKey, scrollTick]);
 
@@ -301,6 +297,10 @@ export function EventForm({
         )
       : "Date and time";
   const previewImage = removePhoto || photoBroken ? null : photoUrl;
+  const previewHost = hostName.trim();
+  const previewNotes = notes.trim();
+  const previewPlace = location.trim();
+  const previewTheme = themeById(theme);
   const previewPick = previewAnswer === "maybe" && !allowMaybe ? "" : previewAnswer;
   const showPreviewCounts =
     (previewPick === "yes" || previewPick === "maybe") && (askAdults || askKids || askInfants);
@@ -313,32 +313,8 @@ export function EventForm({
           {error}
         </p>
       ) : null}
-      <div className={`${tab === "preview" ? "composer show-preview" : "composer"}${isCreate ? " composer-create" : ""}`}>
-        {showPreview ? (
-          <div className="composer-tabs segmented" role="tablist" aria-label="Create or preview">
-            <button
-              type="button"
-              role="tab"
-              id="create-tab-details"
-              aria-selected={tab === "edit"}
-              aria-controls="create-panel-details"
-              onClick={() => setTab("edit")}
-            >
-              Details
-            </button>
-            <button
-              type="button"
-              role="tab"
-              id="create-tab-preview"
-              aria-selected={tab === "preview"}
-              aria-controls="create-panel-preview"
-              onClick={() => setTab("preview")}
-            >
-              Preview
-            </button>
-          </div>
-        ) : null}
-        <div className="composer-form stack" id="create-panel-details" role={showPreview ? "tabpanel" : undefined} aria-labelledby={showPreview ? "create-tab-details" : undefined}>
+      <div className={isCreate ? "composer composer-create" : "composer"}>
+        <div className="composer-form stack">
           <label className={invalidKey === "title" ? "field is-invalid" : "field"}>
             <span>Party title</span>
             <input
@@ -494,7 +470,15 @@ export function EventForm({
                 <span>Theme</span>
                 <div className="theme-grid" role="radiogroup" aria-label="Invite theme">
                   {THEME_LIST.map((item) => (
-                    <label key={item.id} className={theme === item.id ? "theme-pick on" : "theme-pick"}>
+                    <label
+                      key={item.id}
+                      className={theme === item.id ? "theme-pick on" : "theme-pick"}
+                      style={
+                        theme === item.id
+                          ? { borderColor: item.accent, boxShadow: `0 0 0 3px ${item.soft}` }
+                          : undefined
+                      }
+                    >
                       <input
                         type="radio"
                         name="theme"
@@ -511,6 +495,71 @@ export function EventForm({
                   ))}
                 </div>
               </div>
+              <section className="docked-preview" aria-label="Invite preview">
+                <div className="docked-preview-head">
+                  <span className="hint">Guest preview</span>
+                  <span className="hint">{previewTheme.label}</span>
+                </div>
+                <div className="docked-preview-stage" style={themeVars(previewTheme)} data-theme={previewTheme.id}>
+                  <InviteCardView
+                    theme={previewTheme}
+                    title={title.trim() || "Your party"}
+                    guestName="Priya"
+                    when={previewWhen}
+                    place={previewPlace}
+                    hostName={previewHost}
+                    notes={previewNotes}
+                    imageSrc={previewImage}
+                  />
+                  <div className="card stack">
+                    <p className="hint">What guests see when they answer</p>
+                    <RsvpChoice
+                      name="previewAttending"
+                      value={previewPick}
+                      onChange={setPreviewAnswer}
+                      allowMaybe={allowMaybe}
+                      required={false}
+                    />
+                    {showPreviewCounts ? (
+                      <div className="stack">
+                        {askAdults ? (
+                          <Stepper name="previewAdults" label="Adults" value={previewAdults} onChange={setPreviewAdults} submit={false} />
+                        ) : null}
+                        {askKids ? (
+                          <Stepper name="previewKids" label="Kids" value={previewKids} onChange={setPreviewKids} submit={false} />
+                        ) : null}
+                        {askInfants ? (
+                          <Stepper
+                            name="previewInfants"
+                            label={BABY_LABEL}
+                            value={previewInfants}
+                            onChange={setPreviewInfants}
+                            submit={false}
+                          />
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {askComment ? (
+                      <label className="field">
+                        <span>
+                          Note for{" "}
+                          {previewHost ? previewHost : <span className="preview-placeholder">Your name</span>}
+                        </span>
+                        <textarea className="control" rows={3} readOnly tabIndex={-1} placeholder="Add a note…" />
+                      </label>
+                    ) : null}
+                  </div>
+                </div>
+              </section>
+              <fieldset className="stack">
+                <legend>What should guests tell you?</legend>
+                <p className="hint">Going and can&apos;t go are always shown.</p>
+                <Switch name="allowMaybe" label="Maybe" checked={allowMaybe} onChange={setAllowMaybe} />
+                <Switch name="askComment" label="A note" checked={askComment} onChange={setAskComment} />
+                <Switch name="askAdults" label="Adults" checked={askAdults} onChange={setAskAdults} />
+                <Switch name="askKids" label="Kids" checked={askKids} onChange={setAskKids} />
+                <Switch name="askInfants" label={BABY_LABEL} checked={askInfants} onChange={setAskInfants} />
+              </fieldset>
               <label className="field">
                 <span>RSVP deadline</span>
                 <input
@@ -536,68 +585,11 @@ export function EventForm({
                 />
                 <span className="hint">Optional. Maximum number of people who can say going.</span>
               </label>
-              <fieldset className="stack">
-                <legend>What should guests tell you?</legend>
-                <p className="hint">Going and can&apos;t go are always shown.</p>
-                <Switch name="allowMaybe" label="Maybe" checked={allowMaybe} onChange={setAllowMaybe} />
-                <Switch name="askComment" label="A note" checked={askComment} onChange={setAskComment} />
-                <Switch name="askAdults" label="Adults" checked={askAdults} onChange={setAskAdults} />
-                <Switch name="askKids" label="Kids" checked={askKids} onChange={setAskKids} />
-                <Switch name="askInfants" label={BABY_LABEL} checked={askInfants} onChange={setAskInfants} />
-              </fieldset>
           </div>
           <div className={parkSubmit ? "sticky-submit is-parked" : "sticky-submit"}>
             <SubmitButton className="block" label={submitLabel} pendingLabel="Saving…" />
           </div>
         </div>
-        {showPreview ? (
-          <aside className="composer-preview stack" id="create-panel-preview" role="tabpanel" aria-labelledby="create-tab-preview" aria-label="Invite preview">
-            <InviteCardView
-              theme={theme}
-              title={title.trim() || "Your party"}
-              guestName="Priya"
-              when={previewWhen}
-              place={location}
-              hostName={hostName.trim() || "You"}
-              imageSrc={previewImage}
-            />
-            <div className="card stack">
-              <p className="hint">What guests see when they answer</p>
-              <RsvpChoice
-                name="previewAttending"
-                value={previewPick}
-                onChange={setPreviewAnswer}
-                allowMaybe={allowMaybe}
-                required={false}
-              />
-              {showPreviewCounts ? (
-                <div className="stack">
-                  {askAdults ? (
-                    <Stepper name="previewAdults" label="Adults" value={previewAdults} onChange={setPreviewAdults} submit={false} />
-                  ) : null}
-                  {askKids ? (
-                    <Stepper name="previewKids" label="Kids" value={previewKids} onChange={setPreviewKids} submit={false} />
-                  ) : null}
-                  {askInfants ? (
-                    <Stepper
-                      name="previewInfants"
-                      label={BABY_LABEL}
-                      value={previewInfants}
-                      onChange={setPreviewInfants}
-                      submit={false}
-                    />
-                  ) : null}
-                </div>
-              ) : null}
-              {askComment ? (
-                <label className="field">
-                  <span>Note for {hostName.trim() || "You"}</span>
-                  <textarea className="control" rows={3} readOnly tabIndex={-1} />
-                </label>
-              ) : null}
-            </div>
-          </aside>
-        ) : null}
       </div>
     </form>
   );

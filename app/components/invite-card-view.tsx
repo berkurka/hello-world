@@ -39,6 +39,7 @@ export function InviteCardView({
   hostName,
   imageSrc,
   theme,
+  notes,
   hero = false,
   compact = false,
 }: {
@@ -49,11 +50,14 @@ export function InviteCardView({
   hostName: string;
   imageSrc?: string | null;
   theme: InviteTheme | string;
+  notes?: string;
   hero?: boolean;
   /** RSVP card: eyebrow, title, and guest name. Details live in the rows below. */
   compact?: boolean;
 }) {
   const tokens = typeof theme === "string" ? themeById(theme) : theme;
+  const hostLabel = hostName.trim();
+  const note = notes?.trim() ?? "";
   return (
     <article
       className={hero ? "invite hero" : "invite"}
@@ -75,7 +79,10 @@ export function InviteCardView({
               <>
                 <p className="invite-when">{when}</p>
                 {place ? <p className="invite-where">{place}</p> : null}
-                <p className="invite-host">Hosted by {hostName}</p>
+                <p className={hostLabel ? "invite-host" : "invite-host is-placeholder"}>
+                  Hosted by {hostLabel || "Your name"}
+                </p>
+                {note ? <p className="invite-notes">{note}</p> : null}
               </>
             )}
           </div>
