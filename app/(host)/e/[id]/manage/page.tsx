@@ -133,7 +133,7 @@ export default async function ManageEventPage({
       >
         {invitees.length > 0 ? (
           <section className="card" aria-label="Headcount">
-            <p className="headline-count">{peopleLabel(coming)}</p>
+            <p className="headline-count">{peopleLabel(going)}</p>
             <div
               className="progress"
               role="progressbar"

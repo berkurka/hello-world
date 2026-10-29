@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { rsvpStatus, rsvpStatusLabel } from "./format";
 import { goingNeedsPeople, headcount, peopleComing, replyProgress, statusCounts } from "./party-stats";
@@ -21,6 +22,20 @@ test("headcount adds going guests and treats a family as one when counts are off
     ]),
     4,
   );
+});
+
+test("manage headline counts going headcounts and leaves maybe out", () => {
+  const rows = [
+    { attending: 2, adults: 2, kids: 0, infants: 0 },
+    { attending: 1, adults: 1, kids: 1, infants: 0 },
+    { attending: 0, adults: 4, kids: 0, infants: 0 },
+  ];
+  assert.equal(peopleComing(event, rows), 2);
+  assert.equal(peopleComing(event, [{ attending: 2, adults: 2, kids: 0, infants: 0 }]), 0);
+  assert.equal(peopleComing(event, rows, true), 4);
+  assert.equal(headcount(event, { attending: 2, adults: 2, kids: 0, infants: 0 }), 0);
+  const page = readFileSync("app/(host)/e/[id]/manage/page.tsx", "utf8");
+  assert.match(page, /className="headline-count">\{peopleLabel\(going\)\}/);
 });
 
 test("going with zero people is blocked only when the host asks for counts", () => {
