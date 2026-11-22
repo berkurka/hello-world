@@ -167,11 +167,6 @@ function partyLimitError(fields: { rsvpDeadline: string | null | "invalid"; gues
   return null;
 }
 
-function endBeforeStart(startsAt: string, endsTime: string) {
-  if (!startsAt || !endsTime) return false;
-  return `${startsAt.slice(0, 10)}T${endsTime}` <= startsAt;
-}
-
 export async function createEvent(formData: FormData) {
   const fields = eventFields(formData);
   const hostEmail = required(formData, "hostEmail").toLowerCase();
@@ -180,9 +175,6 @@ export async function createEvent(formData: FormData) {
   }
   if (!fields.startsAt) {
     return { error: "Date and time are required." };
-  }
-  if (endBeforeStart(fields.startsAt, fields.endsTime)) {
-    return { error: "End time must be after the start time." };
   }
   if (!fields.hostName) {
     return { error: "Host name is required." };
@@ -267,9 +259,6 @@ export async function updateEvent(formData: FormData) {
   }
   if (!fields.startsAt) {
     return { error: "Date and time are required." };
-  }
-  if (endBeforeStart(fields.startsAt, fields.endsTime)) {
-    return { error: "End time must be after the start time." };
   }
   if (!fields.hostName) {
     return { error: "Host name is required." };

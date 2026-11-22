@@ -101,6 +101,13 @@ test("invite messages reply to the host and preview the party", () => {
   assert.equal(message.replyTo, "host@example.com");
   assert.match(message.text, /Sat, Oct 17 · 2:00 PM · Riverside Park/);
   assert.match(message.html, /display:none/);
+  assert.match(message.html, /cid:invitation/);
+  assert.match(message.html, /coming out of an envelope/);
+  assert.match(message.html, /rsvp\/abc\?open=1/);
+  assert.match(message.html, /Add to calendar/);
+  assert.match(message.html, /calendar\.google\.com/);
+  assert.match(message.html, /Open in Maps/);
+  assert.doesNotMatch(message.html, /\?t=/);
   assert.match(message.text, /\/rsvp\/abc\/event\.ics/);
   assert.match(message.text, /calendar\.google\.com/);
   assert.doesNotMatch(message.text, /calendar\.google\.com[^\n]*rsvp/i);
@@ -133,6 +140,8 @@ test("google and outlook links leave out the rsvp token", () => {
   const calendarLines = message.text.split("\n").filter((line) => line.includes("calendar.google.com") || line.includes("outlook.live.com"));
   assert.equal(calendarLines.length, 2);
   for (const line of calendarLines) assert.equal(line.includes(token), false);
+  const htmlCalendar = message.html.split("calendar.google.com")[1]?.slice(0, 800) ?? "";
+  assert.equal(htmlCalendar.includes(token), false);
   assert.match(message.text, new RegExp(`/rsvp/${token}/event\\.ics`));
   const ics = buildIcs({
     uid: "guest@partyz",

@@ -8,6 +8,17 @@ function escapeHtml(value: string) {
     .replace(/"/g, "&quot;");
 }
 
+export function inviteCalendarHtml(links: { href: string; label: string }[]) {
+  const items = links.filter((link) => link.href);
+  if (items.length === 0) return "";
+  return `<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.7;">${items
+    .map(
+      (link) =>
+        `<a href="${escapeHtml(link.href)}" style="color:inherit;font-weight:700;">${escapeHtml(link.label)}</a>`,
+    )
+    .join(" · ")}</p>`;
+}
+
 export function inviteEmailHtml(opts: {
   guestName: string;
   hostName: string;
@@ -36,7 +47,7 @@ export function inviteEmailHtml(opts: {
             <tr>
               <td style="padding:0;">
                 <a href="${escapeHtml(imageHref)}" style="text-decoration:none;">
-                  <img src="cid:invitation" alt="${escapeHtml(`Invitation to ${opts.title} for ${opts.guestName}`)}" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0;" />
+                  <img src="cid:invitation" alt="${escapeHtml(`Invitation to ${opts.title} for ${opts.guestName}, the card coming out of an envelope`)}" width="600" style="display:block;width:100%;max-width:600px;height:auto;border:0;" />
                 </a>
               </td>
             </tr>

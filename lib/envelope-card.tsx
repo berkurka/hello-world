@@ -21,20 +21,28 @@ export async function envelopeCardPng(props: InviteCardProps) {
 function EnvelopeStill({ guestName, title, when, location, hostName, imageSrc, theme }: InviteCardProps) {
   const tokens = themeById(theme);
   const font = displayFontFamily(tokens.display);
-  const desk = tokens.dark ? tokens.frame : "#efe4d4";
-  const kraft = tokens.dark ? "#3a3124" : "#f6e7cf";
-  const kraftEdge = tokens.dark ? "#2a2418" : "#e4d0ae";
-  const ink = tokens.dark ? tokens.ink : "#3b2a1a";
-  const cardTop = 28;
-  const cardLeft = 48;
+  const dark = tokens.dark;
+  const desk = dark ? "#12100c" : "#efe4d4";
+  const kraft = dark ? "#3c342b" : "#f3e0c0";
+  const kraftDeep = dark ? "#2c261f" : "#e4cb9c";
+  const kraftEdge = dark ? "#1f1a15" : "#b8894a";
+  const flap = dark ? "#6a5a42" : "#d7b57a";
+  const ink = dark ? "#f4ead6" : "#3b2a1a";
+  const rule = dark ? "#6d5c46" : "#d7c09a";
+  const cardLeft = 108;
+  const cardTop = 36;
   const cardWidth = ENVELOPE_WIDTH - cardLeft * 2;
-  const cardHeight = 520;
+  const cardHeight = 500;
   const reveal = Math.round(cardHeight * ENVELOPE_STILL_REVEAL);
-  const envelopeTop = cardTop + reveal - 6;
+  const pocketTop = cardTop + reveal - 4;
   const envelopeLeft = 18;
   const envelopeWidth = ENVELOPE_WIDTH - envelopeLeft * 2;
-  const envelopeHeight = ENVELOPE_HEIGHT - envelopeTop - 28;
-  const titleSize = title.length > 28 ? 36 : title.length > 18 ? 42 : 48;
+  const pocketHeight = ENVELOPE_HEIGHT - pocketTop - 22;
+  const flapH = 156;
+  const flapTop = pocketTop - flapH + 6;
+  const titleSize = title.length > 32 ? 32 : title.length > 22 ? 38 : 44;
+  const nameSize = guestName.length > 28 ? 26 : guestName.length > 18 ? 32 : 40;
+  const photoH = imageSrc ? 92 : 0;
   return (
     <div
       style={{
@@ -49,6 +57,33 @@ function EnvelopeStill({ guestName, title, when, location, hostName, imageSrc, t
       <div
         style={{
           position: "absolute",
+          top: flapTop,
+          left: envelopeLeft,
+          width: envelopeWidth,
+          height: flapH,
+          display: "flex",
+        }}
+      >
+        <div
+          style={{
+            width: envelopeWidth / 2,
+            height: flapH,
+            display: "flex",
+            backgroundImage: `linear-gradient(to bottom right, rgba(0,0,0,0) 49.2%, ${flap} 50%)`,
+          }}
+        />
+        <div
+          style={{
+            width: envelopeWidth / 2,
+            height: flapH,
+            display: "flex",
+            backgroundImage: `linear-gradient(to bottom left, rgba(0,0,0,0) 49.2%, ${flap} 50%)`,
+          }}
+        />
+      </div>
+      <div
+        style={{
+          position: "absolute",
           top: cardTop,
           left: cardLeft,
           width: cardWidth,
@@ -56,8 +91,9 @@ function EnvelopeStill({ guestName, title, when, location, hostName, imageSrc, t
           display: "flex",
           flexDirection: "column",
           backgroundColor: tokens.paper,
-          borderRadius: 16,
+          borderRadius: 14,
           overflow: "hidden",
+          border: `3px solid ${tokens.frame}`,
         }}
       >
         {imageSrc ? (
@@ -65,25 +101,19 @@ function EnvelopeStill({ guestName, title, when, location, hostName, imageSrc, t
             src={imageSrc}
             alt=""
             width={cardWidth}
-            height={120}
-            style={{ objectFit: "cover", width: cardWidth, height: 120 }}
+            height={photoH}
+            style={{ objectFit: "cover", width: cardWidth, height: photoH }}
           />
         ) : (
-          <div style={{ display: "flex", height: 14, backgroundColor: tokens.accent }} />
+          <div style={{ display: "flex", height: 12, backgroundColor: tokens.accent }} />
         )}
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            padding: "22px 32px 16px",
-          }}
-        >
+        <div style={{ display: "flex", flexDirection: "column", padding: "18px 28px 8px" }}>
           <div
             style={{
               display: "flex",
               color: tokens.accent,
-              fontSize: 15,
-              letterSpacing: 3,
+              fontSize: 13,
+              letterSpacing: 2.4,
               textTransform: "uppercase",
               fontWeight: 600,
             }}
@@ -98,7 +128,7 @@ function EnvelopeStill({ guestName, title, when, location, hostName, imageSrc, t
               fontSize: titleSize,
               fontWeight: 600,
               lineHeight: 1.05,
-              marginTop: 10,
+              marginTop: 8,
             }}
           >
             {title}
@@ -107,17 +137,17 @@ function EnvelopeStill({ guestName, title, when, location, hostName, imageSrc, t
             style={{
               display: "flex",
               color: tokens.ink,
-              fontSize: 24,
+              fontSize: 22,
               fontWeight: 600,
-              marginTop: 16,
+              marginTop: 14,
             }}
           >
             {when}
           </div>
           {location ? (
-            <div style={{ display: "flex", color: tokens.muted, fontSize: 20, marginTop: 8 }}>{location}</div>
+            <div style={{ display: "flex", color: tokens.muted, fontSize: 18, marginTop: 6 }}>{location}</div>
           ) : null}
-          <div style={{ display: "flex", color: tokens.accent, fontSize: 18, fontWeight: 600, marginTop: 14 }}>
+          <div style={{ display: "flex", color: tokens.accent, fontSize: 16, fontWeight: 600, marginTop: 10 }}>
             {`Hosted by ${hostName}`}
           </div>
         </div>
@@ -125,40 +155,70 @@ function EnvelopeStill({ guestName, title, when, location, hostName, imageSrc, t
       <div
         style={{
           position: "absolute",
-          top: envelopeTop,
+          top: pocketTop,
           left: envelopeLeft,
           width: envelopeWidth,
-          height: envelopeHeight,
+          height: pocketHeight,
           display: "flex",
           flexDirection: "column",
+          backgroundColor: kraft,
+          borderBottomLeftRadius: 18,
+          borderBottomRightRadius: 18,
+          borderTopLeftRadius: 4,
+          borderTopRightRadius: 4,
         }}
       >
+        <div style={{ display: "flex", height: 16, backgroundColor: kraftEdge }} />
+        <div style={{ display: "flex", height: 10, backgroundColor: kraftDeep }} />
         <div
           style={{
             display: "flex",
-            height: 26,
-            backgroundColor: kraftEdge,
-            borderTopLeftRadius: 10,
-            borderTopRightRadius: 10,
+            position: "absolute",
+            top: 28,
+            right: 26,
+            width: 58,
+            height: 68,
+            border: `3px solid ${tokens.accent}`,
+            borderRadius: 4,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: dark ? "#2a241c" : "#fffaf2",
           }}
-        />
+        >
+          <div
+            style={{
+              display: "flex",
+              width: 28,
+              height: 28,
+              borderRadius: 14,
+              backgroundColor: tokens.accent,
+            }}
+          />
+        </div>
         <div
           style={{
             display: "flex",
             flexGrow: 1,
+            flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: kraft,
-            color: ink,
-            fontFamily: font,
-            fontSize: guestName.length > 24 ? 28 : 40,
-            fontWeight: 600,
-            padding: "8px 28px 20px",
-            borderBottomLeftRadius: 18,
-            borderBottomRightRadius: 18,
+            padding: "8px 96px 18px 36px",
           }}
         >
-          {guestName}
+          <div
+            style={{
+              display: "flex",
+              color: ink,
+              fontFamily: font,
+              fontSize: nameSize,
+              fontWeight: 600,
+              lineHeight: 1.1,
+            }}
+          >
+            {guestName}
+          </div>
+          <div style={{ display: "flex", width: 210, height: 2, backgroundColor: rule, marginTop: 14 }} />
+          <div style={{ display: "flex", width: 160, height: 2, backgroundColor: rule, marginTop: 10 }} />
         </div>
       </div>
     </div>

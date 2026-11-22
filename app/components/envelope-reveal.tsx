@@ -16,9 +16,11 @@ export function EnvelopeReveal({
       <div className="envelope-stage">
         <div className="envelope-card-rise">{card}</div>
         <div className="envelope-pocket" aria-hidden="true">
-          <div className="envelope-flap" />
+          <div className="envelope-wing" data-side="left" />
+          <div className="envelope-wing" data-side="right" />
           <div className="envelope-front">
-            <span>{guestName}</span>
+            <span className="envelope-stamp" />
+            <span className="envelope-name">{guestName}</span>
           </div>
         </div>
       </div>

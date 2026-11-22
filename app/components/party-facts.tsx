@@ -10,6 +10,7 @@ function Icon({ children }: { children: ReactNode }) {
 
 export function PartyFacts({
   when,
+  time,
   place,
   hostName,
   notes,
@@ -17,6 +18,7 @@ export function PartyFacts({
   maps,
 }: {
   when: string;
+  time?: string;
   place?: string;
   hostName: string;
   notes?: string | null;
@@ -35,11 +37,27 @@ export function PartyFacts({
           </svg>
         </Icon>
         <div>
-          <div className="fact-label">When</div>
+          <div className="fact-label">Date</div>
           <p>{when}</p>
-          {calendar ? <div className="fact-actions">{calendar}</div> : null}
         </div>
       </div>
+      {time ? (
+        <div className="fact">
+          <Icon>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="8" />
+              <path d="M12 8v5l3 2" />
+            </svg>
+          </Icon>
+          <div>
+            <div className="fact-label">Time</div>
+            <p>{time}</p>
+            {calendar ? <div className="fact-actions">{calendar}</div> : null}
+          </div>
+        </div>
+      ) : calendar ? (
+        <div className="fact-actions">{calendar}</div>
+      ) : null}
       {place || maps ? (
         <div className="fact">
           <Icon>

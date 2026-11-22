@@ -3,7 +3,8 @@ import { GuestFooter } from "@/app/components/guest-footer";
 import { InviteCardView, themeVars } from "@/app/components/invite-card-view";
 import { PartyFacts } from "@/app/components/party-facts";
 import { RsvpResponse } from "@/app/components/rsvp-response";
-import { formatInviteWhen, formatWhen, partyHasPassed } from "@/lib/format";
+import { RsvpChoice } from "@/app/components/ui/rsvp-choice";
+import { formatInviteClock, formatInviteDate, formatInviteWhen, partyHasPassed } from "@/lib/format";
 import {
   cancelledMessage,
   deadlineClosedMessage,
@@ -80,7 +81,8 @@ export function GuestInvite({
   const body = (
     <>
       <PartyFacts
-        when={formatWhen(event.starts_at)}
+        when={formatInviteDate(event.starts_at)}
+        time={formatInviteClock(event.starts_at, event.ends_at)}
         place={event.location}
         hostName={event.host_name}
         notes={event.notes}
@@ -96,7 +98,9 @@ export function GuestInvite({
         <div className="card stack">
           {deadlineMessage ? <p className="lede">{deadlineMessage}</p> : null}
           {capMessage ? <p className="lede">{capMessage}</p> : null}
-          <p className="lede">Guests choose Going or Can&apos;t go here.</p>
+          <p className="lede">Guests answer with these buttons.</p>
+          <RsvpChoice readOnly allowMaybe={allowMaybe} />
+          {preview ? <p className="hint">Preview only. Replies are saved from each guest&apos;s own link.</p> : null}
         </div>
       ) : (
         <RsvpResponse
@@ -119,16 +123,9 @@ export function GuestInvite({
     <div className="guest-shell" style={themeVars(theme)} data-theme={theme.id}>
       {preview ? <p className="preview-banner">Preview — guests answer on their own link.</p> : null}
       <main className="guest-wrap">
-        {animateEnvelope ? (
-          <EnvelopeReveal guestName={guestName} play card={card}>
-            {body}
-          </EnvelopeReveal>
-        ) : (
-          <>
-            {card}
-            {body}
-          </>
-        )}
+        <EnvelopeReveal guestName={guestName} play={animateEnvelope} card={card}>
+          {body}
+        </EnvelopeReveal>
       </main>
       <GuestFooter />
     </div>
