@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { envelopeCardPng } from "./envelope-card";
 import {
   ENVELOPE_GIF_ENABLED,
   ENVELOPE_GIF_NOTE,
@@ -18,6 +19,20 @@ test("the email still shows the card partly out of the envelope", () => {
   assert.ok(ENVELOPE_STILL_REVEAL < 0.8);
   assert.equal(ENVELOPE_WIDTH, 600);
   assert.ok(ENVELOPE_HEIGHT > ENVELOPE_WIDTH);
+});
+
+test("the envelope still is a png with the card leaving the envelope", async () => {
+  const png = await envelopeCardPng({
+    guestName: "Priya",
+    title: "Maya's 7th Birthday",
+    when: "Sat, Nov 7 · 2:00 PM",
+    location: "Riverside Park",
+    hostName: "Bernardo",
+    theme: "classic",
+  });
+  assert.equal(png.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+  assert.equal(png.readUInt32BE(16), ENVELOPE_WIDTH);
+  assert.equal(png.readUInt32BE(20), ENVELOPE_HEIGHT);
 });
 
 test("the envelope image links to the RSVP page with the open animation", () => {

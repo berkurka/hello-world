@@ -17,5 +17,13 @@ export default async function PreviewPage({
   const { t } = await searchParams;
   const auth = await authorizeOrganizer(id, t?.trim() || null, await readHostCreds());
   if (!auth) notFound();
-  return <GuestInvite event={toPublicEvent(auth.event)} guestName="Guest" rsvp={null} preview />;
+  return (
+    <GuestInvite
+      event={toPublicEvent(auth.event)}
+      guestName="Guest"
+      rsvp={null}
+      preview
+      allowMaybe={auth.event.allow_maybe !== 0}
+    />
+  );
 }

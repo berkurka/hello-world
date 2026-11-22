@@ -98,6 +98,28 @@ export function formatPartyDate(startsAt: string) {
   return d.toLocaleDateString(undefined, { month: "long", day: "numeric" });
 }
 
+export function formatInviteDate(startsAt: string) {
+  const d = new Date(startsAt);
+  if (Number.isNaN(d.getTime())) return startsAt;
+  return d.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+export function formatInviteClock(startsAt: string, endsAt?: string | null) {
+  const d = new Date(startsAt);
+  if (Number.isNaN(d.getTime())) return "";
+  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  if (!endsAt) return time;
+  const end = new Date(endsAt);
+  if (Number.isNaN(end.getTime())) return time;
+  const endTime = end.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return `${time}–${endTime}`;
+}
+
 export function formatInviteWhen(startsAt: string, endsAt?: string | null) {
   const d = new Date(startsAt);
   if (Number.isNaN(d.getTime())) return startsAt;

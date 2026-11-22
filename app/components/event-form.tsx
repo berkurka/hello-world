@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { EnvelopeReveal } from "@/app/components/envelope-reveal";
 import { InviteCardView, themeVars } from "@/app/components/invite-card-view";
+import { PartyFacts } from "@/app/components/party-facts";
 import { RsvpChoice, type RsvpAnswer } from "@/app/components/ui/rsvp-choice";
 import { Stepper } from "@/app/components/ui/stepper";
 import { SubmitButton } from "@/app/components/ui/submit-button";
 import { Switch } from "@/app/components/ui/switch";
-import { BABY_LABEL, formatInviteWhen, isEmail } from "@/lib/format";
+import { resolveEndsAt } from "@/lib/calendar";
+import { BABY_LABEL, formatInviteClock, formatInviteDate, isEmail } from "@/lib/format";
 import { fieldKeyFromMessage, inspectPartyImage, partyImagePath } from "@/lib/party-image";
 import type { EditableEvent } from "@/lib/public-event";
 import { THEME_LIST, themeById, type ThemeId } from "@/lib/themes";
@@ -226,8 +229,8 @@ export function EventForm({
       showIssue("Date and time are required.", "startsDate");
       return;
     }
-    if (v.endsTime && (!isTime(v.endsTime) || `${v.startsDate}T${v.endsTime.slice(0, 5)}` <= `${v.startsDate}T${v.startsTime}`)) {
-      showIssue("End time must be after the start time.", "startsDate");
+    if (v.endsTime && !isTime(v.endsTime)) {
+      showIssue("End time must be a time.", "startsDate");
       return;
     }
     if (!nextHost) {
@@ -289,13 +292,12 @@ export function EventForm({
     });
   }
 
-  const previewWhen =
-    isDate(startsDate) && isTime(startsTime)
-      ? formatInviteWhen(
-          `${startsDate}T${startsTime.slice(0, 5)}`,
-          endsTime && isTime(endsTime) ? `${startsDate}T${endsTime.slice(0, 5)}` : null,
-        )
-      : "Date and time";
+  const previewStart =
+    isDate(startsDate) && isTime(startsTime) ? `${startsDate}T${startsTime.slice(0, 5)}` : "";
+  const previewEnd =
+    previewStart && endsTime && isTime(endsTime) ? resolveEndsAt(previewStart, endsTime.slice(0, 5)) : null;
+  const previewDate = previewStart ? formatInviteDate(previewStart) : "Date";
+  const previewClock = previewStart ? formatInviteClock(previewStart, previewEnd) : "Time";
   const previewImage = removePhoto || photoBroken ? null : photoUrl;
   const previewHost = hostName.trim();
   const previewNotes = notes.trim();
@@ -370,6 +372,7 @@ export function EventForm({
               value={endsTime}
               onChange={(e) => setEndsTime(e.target.value.slice(0, 5))}
             />
+            <span className="hint">A time before the start counts as the next day.</span>
           </label>
           <label className={invalidKey === "hostName" ? "field is-invalid" : "field"}>
             <span>Your name</span>
@@ -404,6 +407,109 @@ export function EventForm({
             </label>
           ) : null}
           <input type="hidden" name="timezone" value={timezone} />
+          <div className="field">
+            <span>Theme</span>
+            <div className="theme-grid" role="radiogroup" aria-label="Invite theme">
+              {THEME_LIST.map((item) => (
+                <label
+                  key={item.id}
+                  className={theme === item.id ? "theme-pick on" : "theme-pick"}
+                  style={
+                    theme === item.id
+                      ? { borderColor: item.accent, boxShadow: `0 0 0 3px ${item.soft}` }
+                      : undefined
+                  }
+                >
+                  <input
+                    type="radio"
+                    name="theme"
+                    value={item.id}
+                    checked={theme === item.id}
+                    onChange={() => setTheme(item.id)}
+                  />
+                  <span
+                    className="theme-swatch"
+                    style={{ background: `linear-gradient(135deg, ${item.frame}, ${item.accent})` }}
+                  />
+                  <span>{item.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+        <aside className="composer-preview">
+          <section className="docked-preview" aria-label="Invite preview">
+            <div className="docked-preview-head">
+              <span className="hint">Guest preview</span>
+              <span className="hint">{previewTheme.label}</span>
+            </div>
+            <div className="docked-preview-stage" style={themeVars(previewTheme)} data-theme={previewTheme.id}>
+              <EnvelopeReveal
+                guestName="Priya"
+                play={false}
+                card={
+                  <InviteCardView
+                    hero
+                    compact
+                    theme={previewTheme}
+                    title={title.trim() || "Your party"}
+                    guestName="Priya"
+                    when={previewClock}
+                    place={previewPlace}
+                    hostName={previewHost}
+                    imageSrc={previewImage}
+                  />
+                }
+              >
+                <PartyFacts
+                  when={previewDate}
+                  time={previewClock}
+                  place={previewPlace}
+                  hostName={previewHost || "Your name"}
+                  notes={previewNotes}
+                />
+                <div className="card stack">
+                  <p className="lede">Hi Priya, can you make it?</p>
+                  <RsvpChoice
+                    name="previewAttending"
+                    value={previewPick}
+                    onChange={setPreviewAnswer}
+                    allowMaybe={allowMaybe}
+                    required={false}
+                  />
+                  {showPreviewCounts ? (
+                    <div className="stack">
+                      {askAdults ? (
+                        <Stepper name="previewAdults" label="Adults" value={previewAdults} onChange={setPreviewAdults} submit={false} />
+                      ) : null}
+                      {askKids ? (
+                        <Stepper name="previewKids" label="Kids" value={previewKids} onChange={setPreviewKids} submit={false} />
+                      ) : null}
+                      {askInfants ? (
+                        <Stepper
+                          name="previewInfants"
+                          label={BABY_LABEL}
+                          value={previewInfants}
+                          onChange={setPreviewInfants}
+                          submit={false}
+                        />
+                      ) : null}
+                    </div>
+                  ) : null}
+                  {askComment ? (
+                    <label className="field">
+                      <span>
+                        Note for {previewHost ? previewHost : <span className="preview-placeholder">Your name</span>}
+                      </span>
+                      <textarea className="control" rows={3} readOnly tabIndex={-1} placeholder="Add a note…" />
+                    </label>
+                  ) : null}
+                </div>
+              </EnvelopeReveal>
+            </div>
+          </section>
+        </aside>
+        <div className="composer-more stack">
           <button
             className="btn ghost"
             type="button"
@@ -466,91 +572,6 @@ export function EventForm({
                   <span>Remove the current photo</span>
                 </label>
               ) : null}
-              <div className="field">
-                <span>Theme</span>
-                <div className="theme-grid" role="radiogroup" aria-label="Invite theme">
-                  {THEME_LIST.map((item) => (
-                    <label
-                      key={item.id}
-                      className={theme === item.id ? "theme-pick on" : "theme-pick"}
-                      style={
-                        theme === item.id
-                          ? { borderColor: item.accent, boxShadow: `0 0 0 3px ${item.soft}` }
-                          : undefined
-                      }
-                    >
-                      <input
-                        type="radio"
-                        name="theme"
-                        value={item.id}
-                        checked={theme === item.id}
-                        onChange={() => setTheme(item.id)}
-                      />
-                      <span
-                        className="theme-swatch"
-                        style={{ background: `linear-gradient(135deg, ${item.frame}, ${item.accent})` }}
-                      />
-                      <span>{item.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-              <section className="docked-preview" aria-label="Invite preview">
-                <div className="docked-preview-head">
-                  <span className="hint">Guest preview</span>
-                  <span className="hint">{previewTheme.label}</span>
-                </div>
-                <div className="docked-preview-stage" style={themeVars(previewTheme)} data-theme={previewTheme.id}>
-                  <InviteCardView
-                    theme={previewTheme}
-                    title={title.trim() || "Your party"}
-                    guestName="Priya"
-                    when={previewWhen}
-                    place={previewPlace}
-                    hostName={previewHost}
-                    notes={previewNotes}
-                    imageSrc={previewImage}
-                  />
-                  <div className="card stack">
-                    <p className="hint">What guests see when they answer</p>
-                    <RsvpChoice
-                      name="previewAttending"
-                      value={previewPick}
-                      onChange={setPreviewAnswer}
-                      allowMaybe={allowMaybe}
-                      required={false}
-                    />
-                    {showPreviewCounts ? (
-                      <div className="stack">
-                        {askAdults ? (
-                          <Stepper name="previewAdults" label="Adults" value={previewAdults} onChange={setPreviewAdults} submit={false} />
-                        ) : null}
-                        {askKids ? (
-                          <Stepper name="previewKids" label="Kids" value={previewKids} onChange={setPreviewKids} submit={false} />
-                        ) : null}
-                        {askInfants ? (
-                          <Stepper
-                            name="previewInfants"
-                            label={BABY_LABEL}
-                            value={previewInfants}
-                            onChange={setPreviewInfants}
-                            submit={false}
-                          />
-                        ) : null}
-                      </div>
-                    ) : null}
-                    {askComment ? (
-                      <label className="field">
-                        <span>
-                          Note for{" "}
-                          {previewHost ? previewHost : <span className="preview-placeholder">Your name</span>}
-                        </span>
-                        <textarea className="control" rows={3} readOnly tabIndex={-1} placeholder="Add a note…" />
-                      </label>
-                    ) : null}
-                  </div>
-                </div>
-              </section>
               <fieldset className="stack">
                 <legend>What should guests tell you?</legend>
                 <p className="hint">Going and can&apos;t go are always shown.</p>

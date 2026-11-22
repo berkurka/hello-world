@@ -27,7 +27,7 @@ export function RsvpChoice({
     return (
       <div className="segment" aria-hidden="true">
         {options.map((choice) => (
-          <span key={choice.value} className="segment-btn">
+          <span key={choice.value} className={`segment-btn ${choice.value}`}>
             {choice.label}
           </span>
         ))}
@@ -39,7 +39,7 @@ export function RsvpChoice({
       {options.map((choice) => {
         const on = value === choice.value;
         return (
-          <label key={choice.value} className={on ? `segment-btn on ${choice.value}` : "segment-btn"}>
+          <label key={choice.value} className={on ? `segment-btn on ${choice.value}` : `segment-btn ${choice.value}`}>
             <input
               type="radio"
               name={name}

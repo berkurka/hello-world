@@ -36,7 +36,7 @@ export function RsvpResponse({
   const [editing, setEditing] = useState(!rsvp || Boolean(openForm) || staleMaybe);
   if (deadlineClosed) {
     return (
-      <div className="card stack confirm">
+      <div className="card stack confirm" data-status={rsvp ? answerStatus(rsvp.attending) : undefined}>
         <h2>RSVPs are closed</h2>
         {deadlineMessage ? <p className="lede">{deadlineMessage}</p> : null}
         {serverError ? <p className="flash error">{serverError}</p> : null}
@@ -46,7 +46,7 @@ export function RsvpResponse({
   }
   if (passed) {
     return (
-      <div className="card stack confirm">
+      <div className="card stack confirm" data-status={rsvp ? answerStatus(rsvp.attending) : undefined}>
         <h2>This party was on {formatPassed(event.starts_at)}.</h2>
         {rsvp ? <Answer event={event} hostName={event.host_name} invitee={invitee} rsvp={rsvp} /> : null}
       </div>
@@ -54,7 +54,7 @@ export function RsvpResponse({
   }
   if (rsvp && !editing) {
     return (
-      <div className="card stack confirm">
+      <div className="card stack confirm" data-status={answerStatus(rsvp.attending)}>
         <Answer event={event} hostName={event.host_name} invitee={invitee} rsvp={rsvp} />
         {deadlineMessage ? <p className="lede">{deadlineMessage}</p> : null}
         {capMessage ? <p className="lede">{capMessage}</p> : null}
@@ -83,6 +83,12 @@ export function RsvpResponse({
       />
     </div>
   );
+}
+
+function answerStatus(attending: number) {
+  if (attending === 1) return "going";
+  if (attending === 2) return "maybe";
+  return "declined";
 }
 
 function formatPassed(startsAt: string) {

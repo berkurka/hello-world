@@ -7,7 +7,7 @@ import { envelopeCardPng } from "./envelope-card";
 import { envelopeRsvpHref } from "./envelope";
 import { cancellationMail, reminderMail } from "./guest-mail";
 import { inviteCardPng } from "./invite-card";
-import { inviteEmailHtml } from "./invite-email";
+import { inviteCalendarHtml, inviteEmailHtml } from "./invite-email";
 import { inviteRecipients, type InviteDelivery } from "./invite-delivery";
 import { googleMapsUrl } from "./maps";
 import { partyShareDescription, partyShareTitle } from "./party-share";
@@ -174,27 +174,22 @@ export function buildInviteMail(opts: { event: EventRow; invitee: InviteeRow; rs
   if (outlook) textLines.push(`Outlook: ${outlook}`);
   if (map) textLines.push(`Map: ${map}`);
   const text = textLines.join("\n");
-  const links = [
-    `<a href="${escapeHtml(ics)}">Add to calendar</a>`,
-    google ? `<a href="${escapeHtml(google)}">Google Calendar</a>` : "",
-    outlook ? `<a href="${escapeHtml(outlook)}">Outlook</a>` : "",
-    map ? `<a href="${escapeHtml(map)}">Open in Maps</a>` : "",
-  ].filter(Boolean);
-  const html = `
-      <div style="display:none;max-height:0;overflow:hidden;opacity:0">${escapeHtml(preview)}</div>
-      <div style="font-family:Georgia,serif;color:#2c1810;max-width:640px">
-        <p>Hi ${escapeHtml(invitee.display_name)},</p>
-        <p>${escapeHtml(event.host_name)} invited you to <strong>${escapeHtml(event.title)}</strong>.</p>
-        <p>
-          <a href="${escapeHtml(envelopeRsvpHref(rsvpLink))}" style="text-decoration:none;">
-            <img src="cid:invitation" alt="Invitation for ${escapeHtml(invitee.display_name)}" style="width:100%;max-width:640px;border:1px solid #e6d9c8" />
-          </a>
-        </p>
-        <p><a href="${rsvpLink}" style="display:inline-block;background:#8b2942;color:#fff;padding:12px 18px;text-decoration:none;border-radius:4px">RSVP now</a></p>
-        <p style="color:#5c4638">${links.join(" · ")}</p>
-        <p style="color:#5c4638">Or paste this link: ${escapeHtml(rsvpLink)}</p>
-      </div>
-    `;
+  const html = inviteEmailHtml({
+    guestName: invitee.display_name,
+    hostName: event.host_name,
+    title: event.title,
+    when: formatInviteWhen(event.starts_at, event.ends_at),
+    place: event.location,
+    rsvpLink,
+    imageLink: envelopeRsvpHref(rsvpLink),
+    theme: themeById(event.theme),
+    calendarHtml: inviteCalendarHtml([
+      { href: ics, label: "Add to calendar" },
+      { href: google ?? "", label: "Google Calendar" },
+      { href: outlook ?? "", label: "Outlook" },
+      { href: map ?? "", label: "Open in Maps" },
+    ]),
+  });
   return { subject, text, html, replyTo, preview };
 }
 
@@ -235,16 +230,7 @@ export async function sendInviteEmail(opts: {
     replyTo: content.replyTo,
     subject: content.subject,
     text: content.text,
-    html: inviteEmailHtml({
-      guestName: invitee.display_name,
-      hostName: event.host_name,
-      title: event.title,
-      when,
-      place: event.location,
-      rsvpLink,
-      imageLink: envelopeRsvpHref(rsvpLink),
-      theme,
-    }),
+    html: content.html,
     attachments: [
       {
         filename: "invitation.png",
